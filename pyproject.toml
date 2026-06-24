@@ -1,0 +1,187 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "firmngin"
+version = "0.1.0"
+description = "Python SDK for building Firmngin device integrations"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+    {name = "Firmngin", email = "arif@firmngin.dev"},
+]
+keywords = [
+    "iot",
+    "firmngin",
+    "device",
+    "sdk",
+    "asyncio",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet of Things (IoT)",
+    "Topic :: Communications",
+    "Typing :: Typed",
+]
+dependencies = [
+    "aiomqtt>=2.0,<3.0",
+    "cryptography>=42.0,<44.0",
+]
+
+[project.optional-dependencies]
+http = [
+    "httpx>=0.27,<1.0",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=5.0",
+    "respx>=0.21",
+    "httpx>=0.27,<1.0",
+    # Pinned to <2 because mypy 2.x dropped support for python_version = "3.9".
+    # We target 3.9 runtime; once we raise minimum to 3.10, bump to mypy 2.x.
+    "mypy>=1.13,<2.0",
+    "ruff>=0.5",
+    "testcontainers>=4.7",
+    "pip-audit>=2.7",
+    "bandit>=1.7",
+    "build>=1.2",
+    "twine>=5.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/firmngin/firmngin-sdk-python"
+Repository = "https://github.com/firmngin/firmngin-sdk-python"
+Issues = "https://github.com/firmngin/firmngin-sdk-python/issues"
+Changelog = "https://github.com/firmngin/firmngin-sdk-python/blob/main/CHANGELOG.md"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["firmngin*"]
+
+[tool.setuptools.package-data]
+firmngin = ["py.typed"]
+
+# --------------------------------------------------------------------------------------
+# Ruff — lint + format (replaces black + isort + flake8)
+# --------------------------------------------------------------------------------------
+[tool.ruff]
+target-version = "py39"
+line-length = 100
+extend-exclude = [
+    ".venv",
+    "build",
+    "dist",
+    ".tox",
+]
+
+[tool.ruff.lint]
+# Strict-ish default; relax if needed with explicit per-file ignores.
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "N",   # pep8-naming
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "SIM", # flake8-simplify
+    "TID", # flake8-tidy-imports
+    "PL",  # pylint
+    "RUF", # ruff-specific
+]
+ignore = [
+    "PLR0913", # too-many-arguments — frequent in async APIs, not a bug
+    "PLR2004", # magic value — fine for protocol constants
+    "E501",    # line length handled by formatter
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["PLR0913", "PLR0915", "PLR2004", "N802", "N803", "N806", "S101", "B011"]
+"examples/*" = ["TID252", "N802", "N803"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["firmngin", "tests"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+# --------------------------------------------------------------------------------------
+# Mypy — strict typing on the public package
+# --------------------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.9"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = "httpx"
+ignore_missing_imports = true
+
+# Third-party libs without full type stubs — added per-module as we import them
+# in later phases. Keep this list empty for Phase 0; expand as needed.
+
+# --------------------------------------------------------------------------------------
+# Pytest
+# --------------------------------------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--showlocals",
+    "--tb=short",
+]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "integration: integration tests requiring a real broker (deselect with -m 'not integration')",
+    "slow: slow tests (deselect with -m 'not slow')",
+]
+
+# --------------------------------------------------------------------------------------
+# Coverage
+# --------------------------------------------------------------------------------------
+[tool.coverage.run]
+branch = true
+source = ["src/firmngin"]
+omit = ["*/tests/*", "*/examples/*"]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+    "\\.\\.\\.",
+]
+fail_under = 90
