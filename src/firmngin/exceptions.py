@@ -63,13 +63,13 @@ class QueueError(FirmnginError):
 
 
 __all__ = [
-    "FirmnginError",
+    "AuthError",
     "ConfigError",
     "ConnectionError",
+    "CryptoError",
+    "FirmnginError",
+    "PayloadError",
+    "QueueError",
     "ReconnectError",
     "TLSError",
-    "AuthError",
-    "PayloadError",
-    "CryptoError",
-    "QueueError",
 ]

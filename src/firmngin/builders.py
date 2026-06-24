@@ -19,7 +19,7 @@ class BatchState:
         self._client = client
         self._entries: list[dict[str, str]] = []
 
-    def add(self, key: Entity | str | int, value: Any, *, decimals: int | None = None) -> "BatchState":
+    def add(self, key: Entity | str | int, value: Any, *, decimals: int | None = None) -> BatchState:
         self._entries.append({"k": entity_key(key), "v": entity_value(value, decimals=decimals)})
         return self
 
@@ -41,23 +41,23 @@ class LocationUpdate:
     def __init__(self, client: EntityBatchPublisher) -> None:
         self._batch = BatchState(client)
 
-    def lat(self, value: float) -> "LocationUpdate":
+    def lat(self, value: float) -> LocationUpdate:
         self._batch.add("lat", value)
         return self
 
-    def lon(self, value: float) -> "LocationUpdate":
+    def lon(self, value: float) -> LocationUpdate:
         self._batch.add("lon", value)
         return self
 
-    def accuracy(self, value: float) -> "LocationUpdate":
+    def accuracy(self, value: float) -> LocationUpdate:
         self._batch.add("accuracy", value)
         return self
 
-    def alt(self, value: float) -> "LocationUpdate":
+    def alt(self, value: float) -> LocationUpdate:
         self._batch.add("alt", value)
         return self
 
-    def speed(self, value: float) -> "LocationUpdate":
+    def speed(self, value: float) -> LocationUpdate:
         self._batch.add("speed", value)
         return self
 

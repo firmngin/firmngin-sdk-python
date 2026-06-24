@@ -21,8 +21,8 @@ from firmngin._paths import (
     get_path_metadata_on_pending,
     get_path_metadata_on_success,
     get_path_payment,
-    get_path_ping,
     get_path_pending_payment,
+    get_path_ping,
     get_path_pong,
     get_path_request_init,
     get_path_session_end,
@@ -117,7 +117,7 @@ class FirmnginClient:
         self._firmware_target_model = ""
         self._last_synced_firmware_version = ""
 
-    async def __aenter__(self) -> "FirmnginClient":
+    async def __aenter__(self) -> FirmnginClient:
         return self
 
     async def __aexit__(self, *_exc: object) -> None:
@@ -594,10 +594,10 @@ __all__ = [
     "DeviceStatusCallback",
     "EntityCommandCallback",
     "EntityCommandDecorator",
+    "ErrorCallback",
     "Event",
     "EventCallback",
     "EventDecorator",
-    "ErrorCallback",
     "FirmnginClient",
     "InitCallback",
     "MerchantStatusCallback",

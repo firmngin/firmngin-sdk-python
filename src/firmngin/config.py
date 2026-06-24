@@ -11,7 +11,6 @@ from typing import Any, ClassVar, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from typing_extensions import TypeAlias
 
-
 ValidationMode: TypeAlias = Literal["ca", "pin", "both"]
 
 _PEM_RE = re.compile(
@@ -48,7 +47,7 @@ class KeysConfig(BaseModel):
     fingerprint_sha256: str | None = None
 
     @classmethod
-    def from_file(cls, path: str | Path) -> "KeysConfig":
+    def from_file(cls, path: str | Path) -> KeysConfig:
         """Load a platform-issued keys.json file."""
         with Path(path).open("r", encoding="utf-8") as file:
             raw = json.load(file)
@@ -57,7 +56,7 @@ class KeysConfig(BaseModel):
         return cls.model_validate(raw)
 
     @classmethod
-    def from_env(cls, prefix: str = "FIRMNGIN_") -> "KeysConfig":
+    def from_env(cls, prefix: str = "FIRMNGIN_") -> KeysConfig:
         """Load keys from environment variables using the given prefix."""
         fields = cls.model_fields
         data: dict[str, str] = {}
@@ -112,7 +111,7 @@ class KeysConfig(BaseModel):
         return normalized
 
     @model_validator(mode="after")
-    def _validate_mode_requirements(self) -> "KeysConfig":
+    def _validate_mode_requirements(self) -> KeysConfig:
         if self.validation_mode in {"ca", "both"} and self.ca_cert is None:
             raise ValueError("ca_cert is required when validation_mode is ca or both")
         if self.validation_mode in {"pin", "both"} and self.fingerprint_sha256 is None:
@@ -165,7 +164,7 @@ class ClientConfig(BaseModel):
         return _require_non_empty(value, "queue_path")
 
     @model_validator(mode="after")
-    def _validate_tls_mode(self) -> "ClientConfig":
+    def _validate_tls_mode(self) -> ClientConfig:
         if self.mtls:
             self.keys.require_mtls_material()
         if self.insecure and self.mtls:

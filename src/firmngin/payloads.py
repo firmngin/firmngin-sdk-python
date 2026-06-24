@@ -44,7 +44,7 @@ class Payment:
         *,
         is_pending: bool = False,
         is_success: bool = False,
-    ) -> "Payment":
+    ) -> Payment:
         raw = _loads_object(payload)
         quantity = int(raw.get("q", 1))
         return cls(
@@ -84,7 +84,7 @@ class Verification:
     metadata: str = ""
 
     @classmethod
-    def from_payload(cls, payload: str) -> "Verification":
+    def from_payload(cls, payload: str) -> Verification:
         raw = _loads_object(payload)
         return cls(
             pin=str(raw.get("pi", "")),
@@ -131,7 +131,7 @@ class Init:
     metadata: str = ""
 
     @classmethod
-    def from_payload(cls, payload: str) -> "Init":
+    def from_payload(cls, payload: str) -> Init:
         raw = _loads_object(payload)
         return cls(
             entities=raw.get("e"),
@@ -201,7 +201,7 @@ class DeviceStatus:
     metadata: str = ""
 
     @classmethod
-    def from_payload(cls, payload: str) -> "DeviceStatus":
+    def from_payload(cls, payload: str) -> DeviceStatus:
         raw = _loads_object(payload)
         return cls(state=str(raw.get("s", "")), metadata=payload)
 
@@ -262,7 +262,7 @@ class EntityCommand:
     metadata: str = ""
 
     @classmethod
-    def from_key_value(cls, key: str, value: str) -> "EntityCommand":
+    def from_key_value(cls, key: str, value: str) -> EntityCommand:
         return cls(key=key, value=value, metadata=value)
 
     @property

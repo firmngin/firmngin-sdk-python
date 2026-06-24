@@ -5,7 +5,15 @@ from __future__ import annotations
 import pytest
 
 from firmngin.exceptions import PayloadError
-from firmngin.payloads import DeviceStatus, Entity, EntityCommand, EntityValue, Init, Payment, Verification
+from firmngin.payloads import (
+    DeviceStatus,
+    Entity,
+    EntityCommand,
+    EntityValue,
+    Init,
+    Payment,
+    Verification,
+)
 
 
 def test_payment_parses_arduino_short_keys() -> None:

@@ -12,12 +12,12 @@ import json
 import os
 import time
 import uuid
+from collections.abc import Awaitable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Awaitable, Callable
+from typing import Callable
 
 from firmngin.exceptions import QueueError
-
 
 PublishFn = Callable[[str, bytes, bool], Awaitable[None]]
 

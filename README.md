@@ -1,17 +1,17 @@
-# firmngin
+# Firmngin Python SDK
 
 <p align="center">
-  <img src="logo.png" alt="Firmngin Logo" width="200"/>
+  <img src="logo.png" alt="Firmngin Logo" width="96"/>
 </p>
 
 [![Python](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-Python SDK for building Firmngin device integrations.
+This package is intended for building Firmngin device integrations, Linux-based devices, Raspberry Pi deployments, integration tests, and server-side tooling that need to interact with Firmngin as devices.
 
-This package is intended for gateways, Linux-based devices, Raspberry Pi deployments, integration tests, and server-side tooling that need to interact with Firmngin as devices.
+> Status: active development
 
-> Status: alpha. The public API may change before v1.0.0.
+Check out [firmngin.dev](https://firmngin.dev) for more information.
 
 ## Features
 
@@ -114,14 +114,12 @@ Debug logging can be enabled when diagnosing runtime behavior:
 client.set_debug(True)
 ```
 
-Image upload keeps API paths, signing, and multipart handling inside the SDK:
+Image upload is supported for entities that accept image payloads:
 
 ```python
 camera = Entity("camera")
 await client.upload_image(camera, "snapshot.jpg")
 ```
-
-Batch updates use the same `{"k":"...","v":"..."}` wire shape as the device runtime:
 
 ```python
 batch = client.push_batch_entities()
@@ -142,6 +140,10 @@ Planned release gates:
 - `bandit`
 
 These commands are documented as release gates; they are not required to import the package.
+
+## Contributing
+
+If you find a bug or have a feature request or idea, feel free to create a PR or open an issue.
 
 ## License
 

@@ -59,7 +59,7 @@ class DeviceHttpClient:
         self._config = config
         self._pem_files = _TempPemFiles()
 
-    async def __aenter__(self) -> "DeviceHttpClient":
+    async def __aenter__(self) -> DeviceHttpClient:
         return self
 
     async def __aexit__(
