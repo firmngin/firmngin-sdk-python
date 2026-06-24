@@ -1,0 +1,11 @@
+{
+  "device_id": "dev-0000000000-aaaaaaaaaa",
+  "device_key": "key-REPLACE_WITH_REAL_DEVICE_KEY",
+  "decryptor": "532b1b6c9701ef9be5b68f1d4ffd2343",
+  "validation_mode": "both",
+  "ca_cert": "-----BEGIN CERTIFICATE-----\nMIIBkTCB+wIBADANBgkqhkiG9w0BAQUFADAUMRIwEAYDVQQDEwlMb2NhbGhvc3QwHhcN\n-----END CERTIFICATE-----\n",
+  "service_ca_cert": "-----BEGIN CERTIFICATE-----\nMIIBkTCB+wIBADANBgkqhkiG9w0BAQUFADAUMRIwEAYDVQQDEwlMb2NhbGhvc3Q=\n-----END CERTIFICATE-----\n",
+  "client_cert": "-----BEGIN CERTIFICATE-----\nMIIBkTCB+wIBADANBgkqhkiG9w0BAQUFADAUMRIwEAYDVQQDEwlEZXZpY2VDZXJ0\n-----END CERTIFICATE-----\n",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDREPLACE\n-----END PRIVATE KEY-----\n",
+  "fingerprint_sha256": "AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99"
+}
