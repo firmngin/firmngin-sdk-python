@@ -29,17 +29,9 @@ From Git:
 pip install git+https://github.com/firmngin/firmngin-sdk-python.git
 ```
 
-## Dependencies
-
-Core install uses `aiomqtt` (MQTT) and `cryptography` (TLS + AES-GCM E2EE) only.
-
 ## Client vs AsyncClient
 
-|            | `AsyncClient`                   | `Client`                  |
-| ---------- | ------------------------------- | ------------------------- | --- |
-| Style      | `async` / `await`               | Blocking calls            |     |
-| Push state | `await client.push_entity(...)` | `client.push_entity(...)` |
-| Event loop | `await client.run()`            | `client.run()`            |
+There are two client classes: `Client` (sync, blocking) and `AsyncClient` (async, non-blocking). Both support the same events and payloads. Use `AsyncClient` in an async context with `await client.connect()` and `await client.run()`. Use `Client` in a sync context with `client.connect()` and `client.run()`.
 
 Both use `ClientConfig.from_file("keys.json")` and support the same events.
 
