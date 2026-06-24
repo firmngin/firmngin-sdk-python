@@ -1,5 +1,9 @@
 # firmngin
 
+<p align="center">
+  <img src="logo.png" alt="Firmngin Logo" width="200"/>
+</p>
+
 [![Python](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
