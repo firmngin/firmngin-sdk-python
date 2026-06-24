@@ -69,6 +69,115 @@ def test_set_debug_toggles_logging_flag() -> None:
     assert client._debug is False
 
 
+@pytest.mark.asyncio
+async def test_connect_is_silent_when_debug_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    client = _client()
+
+    async def noop_connect() -> None:
+        return None
+
+    async def noop_publish(*_args: object, **_kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr(client._mqtt, "connect", noop_connect)
+    monkeypatch.setattr(client, "_on_mqtt_connected", noop_connect)
+
+    await client.connect()
+
+    assert capsys.readouterr().out == ""
+
+
+@pytest.mark.asyncio
+async def test_connect_prints_lifecycle_messages_when_debug_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    client = _client()
+    client.set_debug(True)
+
+    async def noop_connect() -> None:
+        return None
+
+    monkeypatch.setattr(client._mqtt, "connect", noop_connect)
+    monkeypatch.setattr(client, "_on_mqtt_connected", noop_connect)
+
+    await client.connect()
+
+    output = capsys.readouterr().out
+
+    assert "[debug] debug is active" in output
+    assert "|___/" in output
+    assert "The AIoT Platform" in output
+    assert "[debug] starting" in output
+    assert "[debug] connected to server" in output
+
+
+@pytest.mark.asyncio
+async def test_disconnect_prints_lifecycle_messages_when_debug_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    client = _client()
+    client.set_debug(True)
+    client._mqtt._connected = True
+
+    async def noop_disconnect() -> None:
+        client._mqtt._connected = False
+
+    async def noop_publish(*_args: object, **_kwargs: object) -> None:
+        return None
+
+    async def noop_aclose() -> None:
+        return None
+
+    monkeypatch.setattr(client._mqtt, "disconnect", noop_disconnect)
+    monkeypatch.setattr(client, "_publish_lwt", noop_publish)
+    monkeypatch.setattr(client._http, "aclose", noop_aclose)
+
+    await client.disconnect()
+
+    output = capsys.readouterr().out
+
+    assert "[debug] stopping" in output
+    assert "[debug] stopped" in output
+    assert output.count("[debug] stopping") == 1
+    assert output.count("[debug] stopped") == 1
+
+
+@pytest.mark.asyncio
+async def test_disconnect_is_idempotent_when_debug_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    client = _client()
+    client.set_debug(True)
+    client._mqtt._connected = True
+
+    async def noop_disconnect() -> None:
+        client._mqtt._connected = False
+
+    async def noop_publish(*_args: object, **_kwargs: object) -> None:
+        return None
+
+    async def noop_aclose() -> None:
+        return None
+
+    monkeypatch.setattr(client._mqtt, "disconnect", noop_disconnect)
+    monkeypatch.setattr(client, "_publish_lwt", noop_publish)
+    monkeypatch.setattr(client._http, "aclose", noop_aclose)
+
+    await client.disconnect()
+    await client.disconnect()
+
+    output = capsys.readouterr().out
+
+    assert output.count("[debug] stopping") == 1
+    assert output.count("[debug] stopped") == 1
+
+
 @pytest.mark.parametrize(
     "event,callback_attr",
     [

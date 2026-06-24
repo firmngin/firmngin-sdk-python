@@ -4,34 +4,24 @@ from __future__ import annotations
 
 import asyncio
 
-from firmngin import AsyncClient, ClientConfig, Entity, Event, Init, Payment
+from firmngin import AsyncClient, ClientConfig, Entity, Event, Init, EntityCommand
 
-relay = Entity("1")
-
-
-async def handle_payment(payment: Payment) -> None:
-    if payment.is_pending:
-        print("waiting for payment:", payment.order_id)
-    elif payment.is_success:
-        print("paid:", payment.order_id, payment.item_title)
-
-
-async def handle_init(init: Init) -> None:
-    print("merchant status:", init.merchant_status)
-    if init.is_pin_enabled:
-        print("PIN verification is required")
+relay = Entity(1)
+temperature = Entity("temperature")
 
 
 async def main() -> None:
     config = ClientConfig.from_file("keys.json")
 
     async with AsyncClient(config) as client:
-        client.on(Event.PAYMENT, handle_payment)
-        client.on(Event.INIT, handle_init)
+        @client.on_entity(relay)
+        def handle_relay(command: EntityCommand) -> None:
+            print("relay command:", command.value)
 
+        client.set_debug(True)
         await client.connect()
         await client.request_init()
-        await client.push_entity(relay, "on")
+        await client.push_entity(temperature, 27.5)
         await client.run()
 
 
