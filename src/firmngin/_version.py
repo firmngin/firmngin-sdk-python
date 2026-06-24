@@ -6,4 +6,4 @@ Kept hand-maintained for Phase 0; will be replaced by setuptools-scm in Phase 10
 
 from __future__ import annotations
 
-__version__ = "0.1.0"
+__version__ = "0.0.1"

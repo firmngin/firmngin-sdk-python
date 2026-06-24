@@ -1,7 +1,7 @@
 # Firmngin Python SDK
 
 <p align="center">
-  <img src="logo.png" alt="Firmngin Logo" width="96"/>
+  <img src="https://raw.githubusercontent.com/firmngin/firmngin-sdk-python/main/logo.png" alt="Firmngin Logo" width="96"/>
 </p>
 
 [![Python](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)

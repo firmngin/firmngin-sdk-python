@@ -47,6 +47,7 @@ coverage.xml
 .DS_Store
 
 # Secrets — NEVER commit device credentials
+.env
 keys.json
 keys.local.json
 *.pem
