@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "firmngin"
-version = "0.1.0"
+version = "0.0.1"
 description = "Python SDK for building Firmngin device integrations"
 readme = "README.md"
 requires-python = ">=3.9"
-license = {text = "MIT"}
+license = "MIT"
 authors = [
     {name = "Firmngin", email = "arif@firmngin.dev"},
 ]
@@ -22,15 +22,15 @@ keywords = [
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
-    "Topic :: Internet of Things (IoT)",
     "Topic :: Communications",
+    "Topic :: Software Development :: Embedded Systems",
+    "Topic :: System :: Hardware",
     "Typing :: Typed",
 ]
 dependencies = [
@@ -56,7 +56,8 @@ dev = [
     "pip-audit>=2.7",
     "bandit>=1.7",
     "build>=1.2",
-    "twine>=5.0",
+    "twine>=6.1",
+    "packaging>=24.2",
 ]
 
 [project.urls]
@@ -64,6 +65,9 @@ Homepage = "https://github.com/firmngin/firmngin-sdk-python"
 Repository = "https://github.com/firmngin/firmngin-sdk-python"
 Issues = "https://github.com/firmngin/firmngin-sdk-python/issues"
 Changelog = "https://github.com/firmngin/firmngin-sdk-python/blob/main/CHANGELOG.md"
+
+[tool.setuptools]
+license-files = ["LICENSE"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -12,13 +12,19 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Optional, cast, overload
 
+from firmngin._banner import print_startup_banner
 from firmngin._paths import (
     get_path_device_status,
     get_path_display_pin,
     get_path_entity_command,
     get_path_init,
+    get_path_limit_exceeded,
     get_path_lwt,
     get_path_merchant_status,
+    get_path_metadata_on_expired,
+    get_path_metadata_on_pending,
+    get_path_metadata_on_success,
+    get_path_near_limit,
     get_path_payment,
     get_path_pending_payment,
     get_path_ping,
@@ -27,8 +33,10 @@ from firmngin._paths import (
     get_path_session_end,
     get_path_update_entities,
     get_path_update_entity,
+    get_path_usage_response,
     get_path_verification_result,
 )
+from firmngin._version import __version__
 from firmngin.builders import BatchState, LocationUpdate
 from firmngin.config import ClientConfig
 from firmngin.crypto import AesGcmSession
@@ -43,6 +51,7 @@ from firmngin.payloads import (
     EntityValue,
     Init,
     Payment,
+    Usage,
     Verification,
     entity_key,
     entity_value,
@@ -62,7 +71,8 @@ EventCallback = Callable[[Any], Optional[Awaitable[None]]]
 EventDecorator = Callable[[EventCallback], EventCallback]
 EntityCommandDecorator = Callable[[EntityCommandCallback], EntityCommandCallback]
 
-_SKIP_DECRYPT_SUFFIXES = frozenset({"mop", "moe", "mos"})
+_LWT_ONLINE = b"1"
+_LWT_OFFLINE = b"0"
 
 
 class Event(str, Enum):
@@ -78,6 +88,10 @@ class Event(str, Enum):
     DEVICE_STATUS = "device_status"
     ENTITY_COMMAND = "entity_command"
     ACTIVE_SESSION = "active_session"
+    USAGE = "usage"
+    METADATA_PENDING = "metadata.pending"
+    METADATA_EXPIRED = "metadata.expired"
+    METADATA_SUCCESS = "metadata.success"
     ERROR = "error"
 
 
@@ -92,6 +106,10 @@ _EVENT_CALLBACK_ATTRS: dict[Event, str] = {
     Event.DEVICE_STATUS: "_device_status_callbacks",
     Event.ENTITY_COMMAND: "_entity_command_callbacks",
     Event.ACTIVE_SESSION: "_active_session_callbacks",
+    Event.USAGE: "_usage_callbacks",
+    Event.METADATA_PENDING: "_metadata_pending_callbacks",
+    Event.METADATA_EXPIRED: "_metadata_expired_callbacks",
+    Event.METADATA_SUCCESS: "_metadata_success_callbacks",
     Event.ERROR: "_error_callbacks",
 }
 
@@ -114,7 +132,9 @@ class AsyncClient:
             else None
         )
         self._stopped = False
+        self._disconnect_completed = False
         self._debug = False
+        self._startup_banner_printed = False
         self._logger = get_logger()
         self._payment_callbacks: list[EventCallback] = []
         self._payment_pending_callbacks: list[EventCallback] = []
@@ -127,6 +147,10 @@ class AsyncClient:
         self._entity_command_callbacks: list[EntityCommandCallback] = []
         self._entity_callbacks: dict[str, list[EntityCommandCallback]] = {}
         self._active_session_callbacks: list[EventCallback] = []
+        self._usage_callbacks: list[EventCallback] = []
+        self._metadata_pending_callbacks: list[EventCallback] = []
+        self._metadata_expired_callbacks: list[EventCallback] = []
+        self._metadata_success_callbacks: list[EventCallback] = []
         self._error_callbacks: list[EventCallback] = []
         self._local_entity_values: OrderedDict[str, str] = OrderedDict()
         self._current_order_id = ""
@@ -193,6 +217,10 @@ class AsyncClient:
             self._entity_command_callbacks.clear()
             self._entity_callbacks.clear()
             self._active_session_callbacks.clear()
+            self._usage_callbacks.clear()
+            self._metadata_pending_callbacks.clear()
+            self._metadata_expired_callbacks.clear()
+            self._metadata_success_callbacks.clear()
             self._error_callbacks.clear()
             return
         self._callbacks_for_event(Event(event)).clear()
@@ -200,6 +228,10 @@ class AsyncClient:
     def set_debug(self, enabled: bool = True) -> None:
         """Enable or disable SDK debug logging."""
         self._debug = enabled
+
+    def _debug_print(self, message: str) -> None:
+        if self._debug:
+            print(f"[debug] {message}")
 
     @overload
     def on_entity(
@@ -233,13 +265,32 @@ class AsyncClient:
 
     async def connect(self) -> None:
         self._stopped = False
+        self._disconnect_completed = False
+        if self._debug and not self._startup_banner_printed:
+            self._debug_print("debug is active")
+            print_startup_banner(__version__)
+            self._startup_banner_printed = True
+        self._debug_print("starting")
         if self._offline_queue is not None:
             await self._offline_queue.setup()
         await self._mqtt.connect()
+        self._debug_print("connected to server")
+        await self._on_mqtt_connected()
+
+    async def _on_mqtt_connected(self) -> None:
         await self._subscribe_default_topics()
-        await self._mqtt.publish(get_path_lwt(self.config.keys.device_id), b"1", qos=1, retain=True)
+        await self._publish_lwt(_LWT_ONLINE)
         await self.sync_firmware_info()
+        await self.request_init()
         await self._drain_offline_queue()
+
+    async def _publish_lwt(self, status: bytes) -> None:
+        await self._mqtt.publish(
+            get_path_lwt(self.config.keys.device_id),
+            status,
+            qos=1,
+            retain=True,
+        )
 
     async def run(self) -> None:
         attempts = 0
@@ -254,10 +305,14 @@ class AsyncClient:
                     if self._stopped:
                         break
                     await self._handle_message(message)
+                if self._stopped:
+                    break
             except asyncio.CancelledError:
                 self._stopped = True
-                raise
+                break
             except MqttError as exc:
+                if self._stopped:
+                    break
                 await self._handle_runtime_error(exc)
                 await self._mqtt.disconnect()
                 attempts += 1
@@ -266,6 +321,8 @@ class AsyncClient:
                 await self._sleep_before_reconnect(delay)
                 delay = min(delay * 2, self.config.reconnect_max_delay_seconds)
             except ConnectionError as exc:
+                if self._stopped:
+                    break
                 await self._handle_runtime_error(exc)
                 attempts += 1
                 if self._reconnect_exhausted(attempts):
@@ -274,18 +331,21 @@ class AsyncClient:
                 delay = min(delay * 2, self.config.reconnect_max_delay_seconds)
 
     async def disconnect(self) -> None:
+        if self._disconnect_completed:
+            return
         self._stopped = True
+        self._debug_print("stopping")
         try:
             if self._mqtt.is_connected:
                 try:
-                    await self._mqtt.publish(
-                        get_path_lwt(self.config.keys.device_id), b"0", qos=1, retain=True
-                    )
+                    await self._publish_lwt(_LWT_OFFLINE)
                 except Exception as exc:
                     await self._handle_runtime_error(exc)
         finally:
             await self._mqtt.disconnect()
             await self._http.aclose()
+            self._disconnect_completed = True
+            self._debug_print("stopped")
 
     def stop(self) -> None:
         self._stopped = True
@@ -446,6 +506,12 @@ class AsyncClient:
             get_path_init(device_id),
             get_path_display_pin(device_id),
             get_path_verification_result(device_id),
+            get_path_usage_response(device_id),
+            get_path_limit_exceeded(device_id),
+            get_path_near_limit(device_id),
+            get_path_metadata_on_pending(device_id),
+            get_path_metadata_on_expired(device_id),
+            get_path_metadata_on_success(device_id),
             get_path_ping(device_id),
             get_path_entity_command(device_id),
         ]
@@ -474,9 +540,8 @@ class AsyncClient:
         await self._mqtt.publish(topic, payload, qos=1, retain=retained)
 
     async def _handle_message(self, message: MqttMessage) -> None:  # noqa: PLR0912
-        state = message.topic.rsplit("/", 1)[-1]
-        if state in _SKIP_DECRYPT_SUFFIXES:
-            return
+        topic = message.topic
+        state = topic.rsplit("/", 1)[-1]
 
         try:
             payload = self._crypto.decrypt(message.payload).decode("utf-8")
@@ -484,7 +549,6 @@ class AsyncClient:
             await self._handle_runtime_error(exc)
             return
 
-        topic = message.topic
         try:
             if "/rs/" in topic:
                 await self._dispatch_entity_command(topic, payload)
@@ -527,6 +591,20 @@ class AsyncClient:
                 await self._mqtt.publish(
                     get_path_pong(self.config.keys.device_id), payload.encode("utf-8"), qos=0
                 )
+            elif state in {"ur", "le", "nl"}:
+                usage = Usage.from_payload(
+                    payload,
+                    near_limit=state == "nl",
+                    limit_exceeded=state == "le",
+                )
+                if usage.is_valid:
+                    await self._dispatch_many(self._usage_callbacks, usage)
+            elif state == "mop":
+                await self._dispatch_many(self._metadata_pending_callbacks, payload)
+            elif state == "moe":
+                await self._dispatch_many(self._metadata_expired_callbacks, payload)
+            elif state == "mos":
+                await self._dispatch_many(self._metadata_success_callbacks, payload)
         except Exception as exc:
             await self._handle_runtime_error(exc)
 
@@ -578,9 +656,11 @@ class AsyncClient:
         return max_attempts is not None and attempts >= max_attempts
 
     async def _sleep_before_reconnect(self, delay: float) -> None:
-        if self._stopped:
-            return
-        await asyncio.sleep(delay)
+        remaining = delay
+        while remaining > 0 and not self._stopped:
+            step = min(remaining, 0.2)
+            await asyncio.sleep(step)
+            remaining -= step
 
 
 FirmnginClient = AsyncClient

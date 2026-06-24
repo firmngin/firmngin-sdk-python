@@ -12,6 +12,7 @@ from firmngin.payloads import (
     EntityValue,
     Init,
     Payment,
+    Usage,
     Verification,
 )
 from firmngin.session import ActiveSession
@@ -32,6 +33,7 @@ __all__ = [
     "KeysConfig",
     "LocationUpdate",
     "Payment",
+    "Usage",
     "SyncClient",
     "SyncFirmnginClient",
     "ValidationMode",

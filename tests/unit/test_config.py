@@ -94,6 +94,32 @@ def test_pin_mode_requires_fingerprint() -> None:
         KeysConfig.from_dict(data)
 
 
+def test_keys_config_accepts_platform_server_fingerprint_bytes() -> None:
+    data = _valid_keys_data()
+    data.pop("fingerprint_sha256")
+    data.pop("validation_mode")
+    data["server_fingerprint_bytes"] = [
+        f"0x{byte:02X}" for byte in bytes.fromhex("11" * 32)
+    ]
+
+    keys = KeysConfig.from_dict(data)
+
+    assert keys.validation_mode == "both"
+    assert keys.fingerprint_sha256 == ":".join(f"{byte:02X}" for byte in bytes.fromhex("11" * 32))
+
+
+def test_keys_config_defaults_to_ca_mode_for_20_byte_platform_fingerprint() -> None:
+    data = _valid_keys_data()
+    data.pop("fingerprint_sha256")
+    data.pop("validation_mode")
+    data["server_fingerprint_bytes"] = [f"0x{byte:02X}" for byte in range(20)]
+
+    keys = KeysConfig.from_dict(data)
+
+    assert keys.validation_mode == "ca"
+    assert keys.fingerprint_sha256 is None
+
+
 def test_ca_mode_requires_ca_cert() -> None:
     data = _valid_keys_data()
     data["validation_mode"] = "ca"

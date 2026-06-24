@@ -12,11 +12,14 @@ from firmngin._paths import (
     get_path_display_pin,
     get_path_entity_command,
     get_path_init,
+    get_path_limit_exceeded,
     get_path_lwt,
     get_path_merchant_status,
     get_path_metadata_on_expired,
     get_path_metadata_on_pending,
     get_path_metadata_on_success,
+    get_path_near_limit,
+    get_path_ota_trigger,
     get_path_payment,
     get_path_pending_payment,
     get_path_ping,
@@ -25,6 +28,7 @@ from firmngin._paths import (
     get_path_session_end,
     get_path_update_entities,
     get_path_update_entity,
+    get_path_usage_response,
     get_path_verification_result,
     is_inbound_topic,
 )
@@ -48,6 +52,10 @@ DEV = "dev-1782217379-d5d1680b"
         (get_path_init, "init"),
         (get_path_display_pin, "dpin"),
         (get_path_verification_result, "vr"),
+        (get_path_usage_response, "ur"),
+        (get_path_limit_exceeded, "le"),
+        (get_path_near_limit, "nl"),
+        (get_path_ota_trigger, "ot/trg"),
     ],
 )
 def test_control_topic_format(fn: Callable[[str], str], expected_path: str) -> None:

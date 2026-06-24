@@ -36,6 +36,10 @@ SESSION_END = "session_end"
 PING = "pi"
 PONG = "po"
 LWT = "lwt"
+USAGE_RESPONSE = "ur"
+LIMIT_EXCEEDED = "le"
+NEAR_LIMIT = "nl"
+OTA_TRIGGER = "ot/trg"
 
 _CONTROL_PREFIX = "/c"
 _DEVICE_PREFIX = "/d"
@@ -90,6 +94,22 @@ def get_path_display_pin(device_id: str) -> str:
 
 def get_path_verification_result(device_id: str) -> str:
     return _device_topic(_CONTROL_PREFIX, device_id, VERIFICATION_RESULT)
+
+
+def get_path_usage_response(device_id: str) -> str:
+    return _device_topic(_CONTROL_PREFIX, device_id, USAGE_RESPONSE)
+
+
+def get_path_limit_exceeded(device_id: str) -> str:
+    return _device_topic(_CONTROL_PREFIX, device_id, LIMIT_EXCEEDED)
+
+
+def get_path_near_limit(device_id: str) -> str:
+    return _device_topic(_CONTROL_PREFIX, device_id, NEAR_LIMIT)
+
+
+def get_path_ota_trigger(device_id: str) -> str:
+    return _device_topic(_CONTROL_PREFIX, device_id, OTA_TRIGGER)
 
 
 def get_path_entity_command(device_id: str) -> str:
@@ -157,11 +177,14 @@ __all__ = [
     "DISPLAY_PIN",
     "ENTITY_COMMAND",
     "INIT",
+    "LIMIT_EXCEEDED",
     "LWT",
     "MERCHANT_STATUS",
     "METADATA_ON_EXPIRED",
     "METADATA_ON_PENDING",
     "METADATA_ON_SUCCESS",
+    "NEAR_LIMIT",
+    "OTA_TRIGGER",
     "PAYMENT",
     "PENDING_PAYMENT",
     "PING",
@@ -170,17 +193,21 @@ __all__ = [
     "SESSION_END",
     "UPDATE_ENTITIES",
     "UPDATE_ENTITY",
+    "USAGE_RESPONSE",
     "VERIFICATION_RESULT",
     "device_id_from_topic",
     "get_path_device_status",
     "get_path_display_pin",
     "get_path_entity_command",
     "get_path_init",
+    "get_path_limit_exceeded",
     "get_path_lwt",
     "get_path_merchant_status",
     "get_path_metadata_on_expired",
     "get_path_metadata_on_pending",
     "get_path_metadata_on_success",
+    "get_path_near_limit",
+    "get_path_ota_trigger",
     "get_path_payment",
     "get_path_pending_payment",
     "get_path_ping",
@@ -189,6 +216,7 @@ __all__ = [
     "get_path_session_end",
     "get_path_update_entities",
     "get_path_update_entity",
+    "get_path_usage_response",
     "get_path_verification_result",
     "is_inbound_topic",
 ]

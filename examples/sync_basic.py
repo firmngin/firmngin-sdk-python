@@ -14,9 +14,8 @@ def main() -> None:
         @client.on_entity(relay)
         def handle_relay(command: EntityCommand) -> None:
             print("relay command:", command.value)
-
+        client.set_debug(True)
         client.connect()
-        client.push_entity(relay, "off")
         client.push_entity(temperature, 27.5)
         client.run()
 

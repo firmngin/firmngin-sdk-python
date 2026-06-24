@@ -190,6 +190,46 @@ class Init:
 
 
 @dataclass(frozen=True)
+class Usage:
+    """Usage payload parsed from Arduino keys ``u``, ``l``, ``r``, ``pct``, ``ra``, ``g``."""
+
+    used: int = 0
+    limit: int = 0
+    remaining: int = 0
+    percentage: int = 0
+    reset_at: str = ""
+    granularity: str = ""
+    near_limit: bool = False
+    limit_exceeded: bool = False
+    has_metrics: bool = False
+
+    @classmethod
+    def from_payload(
+        cls,
+        payload: str,
+        *,
+        near_limit: bool = False,
+        limit_exceeded: bool = False,
+    ) -> Usage:
+        raw = _loads_object(payload)
+        return cls(
+            used=int(raw.get("u", 0)),
+            limit=int(raw.get("l", 0)),
+            remaining=int(raw.get("r", 0)),
+            percentage=int(raw.get("pct", 0)),
+            reset_at=str(raw.get("ra", "")),
+            granularity=str(raw.get("g", "")),
+            near_limit=near_limit,
+            limit_exceeded=limit_exceeded,
+            has_metrics="u" in raw or "l" in raw,
+        )
+
+    @property
+    def is_valid(self) -> bool:
+        return self.has_metrics
+
+
+@dataclass(frozen=True)
 class DeviceStatus:
     """Device-state payload parsed from Arduino key ``s``."""
 
@@ -316,6 +356,7 @@ __all__ = [
     "Init",
     "JsonObject",
     "Payment",
+    "Usage",
     "Verification",
     "entity_key",
     "entity_value",

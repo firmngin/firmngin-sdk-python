@@ -51,6 +51,42 @@ def _validate_fingerprint(value: str | None) -> str | None:
     return normalized
 
 
+def _parse_byte_list(values: Any, field_name: str) -> list[int]:
+    if not isinstance(values, list):
+        raise ValueError(f"{field_name} must be an array")
+    parsed: list[int] = []
+    for item in values:
+        if isinstance(item, bool) or not isinstance(item, (int, str)):
+            raise ValueError(f"{field_name} entries must be integers or hex strings")
+        parsed.append(int(item, 0) if isinstance(item, str) else item & 0xFF)
+    return parsed
+
+
+def _fingerprint_from_byte_list(values: Any) -> str | None:
+    parsed = _parse_byte_list(values, "server_fingerprint_bytes")
+    if len(parsed) == 32:
+        return ":".join(f"{byte:02X}" for byte in parsed)
+    if len(parsed) == 20:
+        return None
+    raise ValueError("server_fingerprint_bytes must contain 20 or 32 bytes")
+
+
+def _default_validation_mode(
+    data: dict[str, Any],
+    fingerprint_sha256: str | None,
+) -> str:
+    explicit = data.get("validation_mode")
+    if explicit is not None:
+        return str(explicit)
+    if fingerprint_sha256 is not None and data.get("ca_cert") is not None:
+        return "both"
+    if fingerprint_sha256 is not None:
+        return "pin"
+    if data.get("ca_cert") is not None:
+        return "ca"
+    return "both"
+
+
 @dataclass(frozen=True)
 class KeysConfig:
     """Device identity and cryptographic material from platform ``keys.json``."""
@@ -133,6 +169,14 @@ class KeysConfig:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> KeysConfig:
         """Build and validate keys from a mapping."""
+        payload = dict(data)
+        if "server_fingerprint_bytes" in payload:
+            if payload.get("fingerprint_sha256") is None:
+                derived = _fingerprint_from_byte_list(payload["server_fingerprint_bytes"])
+                if derived is not None:
+                    payload["fingerprint_sha256"] = derived
+            payload.pop("server_fingerprint_bytes")
+
         allowed = {
             "device_id",
             "device_key",
@@ -144,32 +188,35 @@ class KeysConfig:
             "private_key",
             "fingerprint_sha256",
         }
-        unknown = set(data) - allowed
+        unknown = set(payload) - allowed
         if unknown:
             unknown_name = next(iter(sorted(unknown)))
             raise ValueError(f"unexpected keys field: {unknown_name}")
 
         required = ("device_id", "device_key", "decryptor", "service_ca_cert")
         for name in required:
-            if name not in data:
+            if name not in payload:
                 raise ValueError(f"{name} is required")
 
-        validation_mode = data.get("validation_mode", "both")
+        fingerprint_sha256 = (
+            None
+            if payload.get("fingerprint_sha256") is None
+            else str(payload["fingerprint_sha256"])
+        )
+        validation_mode = _default_validation_mode(payload, fingerprint_sha256)
         if not isinstance(validation_mode, str):
             raise ValueError("validation_mode must be a string")
 
         return cls(
-            device_id=str(data["device_id"]),
-            device_key=str(data["device_key"]),
-            decryptor=str(data["decryptor"]),
-            service_ca_cert=str(data["service_ca_cert"]),
+            device_id=str(payload["device_id"]),
+            device_key=str(payload["device_key"]),
+            decryptor=str(payload["decryptor"]),
+            service_ca_cert=str(payload["service_ca_cert"]),
             validation_mode=validation_mode,  # type: ignore[arg-type]
-            ca_cert=None if data.get("ca_cert") is None else str(data["ca_cert"]),
-            client_cert=None if data.get("client_cert") is None else str(data["client_cert"]),
-            private_key=None if data.get("private_key") is None else str(data["private_key"]),
-            fingerprint_sha256=(
-                None if data.get("fingerprint_sha256") is None else str(data["fingerprint_sha256"])
-            ),
+            ca_cert=None if payload.get("ca_cert") is None else str(payload["ca_cert"]),
+            client_cert=None if payload.get("client_cert") is None else str(payload["client_cert"]),
+            private_key=None if payload.get("private_key") is None else str(payload["private_key"]),
+            fingerprint_sha256=fingerprint_sha256,
         )
 
     @property
