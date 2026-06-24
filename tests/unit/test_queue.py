@@ -77,3 +77,31 @@ async def test_enqueue_rejects_empty_topic(tmp_path: Path) -> None:
 
     with pytest.raises(QueueError, match="topic"):
         await queue.enqueue("", b"payload")
+
+
+@pytest.mark.asyncio
+async def test_enqueue_rejects_when_queue_is_full(tmp_path: Path) -> None:
+    queue = OfflineQueue(tmp_path / "queue", max_size=1)
+    await queue.enqueue("/d/dev-1/ps", b"one")
+
+    with pytest.raises(QueueError, match="full"):
+        await queue.enqueue("/d/dev-1/ps", b"two")
+
+
+@pytest.mark.asyncio
+async def test_drain_respects_batch_limit(tmp_path: Path) -> None:
+    queue = OfflineQueue(tmp_path / "queue")
+    await queue.enqueue("/d/dev-1/ps", b"one")
+    await queue.enqueue("/d/dev-1/ps", b"two")
+    published: list[bytes] = []
+
+    async def publish(_topic: str, payload: bytes, _retained: bool) -> None:
+        published.append(payload)
+
+    drained = await queue.drain(publish, limit=1)
+
+    assert drained == 1
+    assert published == [b"one"]
+    peeked = await queue.peek()
+    assert peeked is not None
+    assert peeked.payload == b"two"

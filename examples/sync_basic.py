@@ -1,23 +1,24 @@
-"""Synchronous-style Firmngin device example."""
+"""Synchronous Firmngin device example — relay command + temperature status."""
 
 from __future__ import annotations
 
-from firmngin import ClientConfig, Entity, Event, KeysConfig, Payment, SyncFirmnginClient
+from firmngin import Client, ClientConfig, Entity, EntityCommand
 
-
-def print_payment(payment: Payment) -> None:
-    if payment.is_success:
-        print("paid:", payment.order_id)
+relay = Entity(1)
+temperature = Entity("temperature")
 
 
 def main() -> None:
-    config = ClientConfig(keys=KeysConfig.from_file("keys.json"))
-    relay = Entity("relay")
-    client = SyncFirmnginClient(config)
+    with Client(ClientConfig.from_file("keys.json")) as client:
 
-    client.async_client.on(Event.PAYMENT, print_payment)
-    client.connect()
-    client.push_entity(relay, "off")
+        @client.on_entity(relay)
+        def handle_relay(command: EntityCommand) -> None:
+            print("relay command:", command.value)
+
+        client.connect()
+        client.push_entity(relay, "off")
+        client.push_entity(temperature, 27.5)
+        client.run()
 
 
 if __name__ == "__main__":

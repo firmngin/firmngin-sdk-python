@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import asyncio
 
-from firmngin import ClientConfig, Event, FirmnginClient, KeysConfig, Verification
+from firmngin import AsyncClient, ClientConfig, Event, Verification
 
 
 async def main() -> None:
-    config = ClientConfig(keys=KeysConfig.from_file("keys.json"))
+    config = ClientConfig.from_file("keys.json")
 
-    async with FirmnginClient(config) as client:
+    async with AsyncClient(config) as client:
+
         @client.on(Event.PIN)
         async def handle_pin(verification: Verification) -> None:
             print("PIN:", verification.pin)

@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import asyncio
 
-from firmngin import ClientConfig, Event, FirmnginClient, KeysConfig, Payment
+from firmngin import AsyncClient, ClientConfig, Event, Payment
 
 
 async def main() -> None:
-    config = ClientConfig(keys=KeysConfig.from_file("keys.json"))
+    config = ClientConfig.from_file("keys.json")
 
-    async with FirmnginClient(config) as client:
+    async with AsyncClient(config) as client:
+
         @client.on(Event.PAYMENT_PENDING)
         async def handle_pending(payment: Payment) -> None:
             print("payment pending:", payment.order_id)

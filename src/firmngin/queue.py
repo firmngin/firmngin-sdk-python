@@ -37,8 +37,16 @@ class QueuedMessage:
 class OfflineQueue:
     """Durable oldest-first publish queue backed by local files."""
 
-    def __init__(self, path: str | Path) -> None:
+    def __init__(
+        self,
+        path: str | Path,
+        *,
+        max_size: int | None = None,
+        max_bytes: int | None = None,
+    ) -> None:
         self._path = Path(path)
+        self._max_size = max_size
+        self._max_bytes = max_bytes
 
     async def setup(self) -> None:
         """Create the queue directory if it does not exist."""
@@ -50,14 +58,24 @@ class OfflineQueue:
             raise QueueError("topic must be a non-empty string")
 
         await self.setup()
+        if self._max_size is not None:
+            count = await asyncio.to_thread(self._count_messages)
+            if count >= self._max_size:
+                raise QueueError("offline queue is full")
+        if self._max_bytes is not None:
+            total_bytes = await asyncio.to_thread(self._total_payload_bytes)
+            if total_bytes + len(payload) > self._max_bytes:
+                raise QueueError("offline queue byte limit exceeded")
+
+        sequence = time.time_ns()
         message = QueuedMessage(
-            id=f"{time.time_ns()}-{uuid.uuid4().hex}",
+            id=f"{sequence}-{uuid.uuid4().hex[:8]}",
             topic=topic,
             payload=payload,
             retained=retained,
             created_at=int(time.time()),
         )
-        await asyncio.to_thread(self._write_message, message)
+        await asyncio.to_thread(self._write_message, message, sequence)
         return message
 
     async def peek(self) -> QueuedMessage | None:
@@ -75,10 +93,10 @@ class OfflineQueue:
         if path is not None:
             await asyncio.to_thread(path.unlink)
 
-    async def drain(self, publish_fn: PublishFn) -> int:
-        """Publish and remove queued messages until the queue is empty or publish fails."""
+    async def drain(self, publish_fn: PublishFn, *, limit: int | None = None) -> int:
+        """Publish and remove queued messages until empty, publish fails, or limit is reached."""
         drained = 0
-        while True:
+        while limit is None or drained < limit:
             message = await self.peek()
             if message is None:
                 return drained
@@ -89,8 +107,9 @@ class OfflineQueue:
                 raise QueueError(f"failed to publish queued message {message.id}") from exc
             await self.drop(message.id)
             drained += 1
+        return drained
 
-    def _write_message(self, message: QueuedMessage) -> None:
+    def _write_message(self, message: QueuedMessage, sequence: int) -> None:
         payload = {
             "id": message.id,
             "topic": message.topic,
@@ -99,8 +118,8 @@ class OfflineQueue:
             "created_at": message.created_at,
             "attempts": message.attempts,
         }
-        final_path = self._path / f"{message.id}.json"
-        tmp_path = self._path / f".{message.id}.tmp"
+        final_path = self._path / f"{sequence:020d}.json"
+        tmp_path = self._path / f".{sequence:020d}.tmp"
         with tmp_path.open("w", encoding="utf-8") as file:
             json.dump(payload, file, separators=(",", ":"), sort_keys=True)
             file.write("\n")
@@ -109,14 +128,28 @@ class OfflineQueue:
         os.replace(tmp_path, final_path)
 
     def _first_message_path(self) -> Path | None:
-        paths = sorted(self._path.glob("*.json"))
-        return paths[0] if paths else None
+        return min(self._path.glob("*.json"), default=None, key=lambda path: path.name)
 
     def _message_path_for_drop(self, message_id: str | None) -> Path | None:
         if message_id is None:
             return self._first_message_path()
-        path = self._path / f"{message_id}.json"
-        return path if path.exists() else None
+        for path in self._path.glob("*.json"):
+            with path.open("r", encoding="utf-8") as file:
+                raw = json.load(file)
+            if str(raw.get("id")) == message_id:
+                return path
+        return None
+
+    def _count_messages(self) -> int:
+        return sum(1 for _ in self._path.glob("*.json"))
+
+    def _total_payload_bytes(self) -> int:
+        total = 0
+        for path in self._path.glob("*.json"):
+            with path.open("r", encoding="utf-8") as file:
+                raw = json.load(file)
+            total += len(base64.b64decode(str(raw["payload"])))
+        return total
 
     @staticmethod
     def _read_message(path: Path) -> QueuedMessage:
@@ -135,6 +168,10 @@ class OfflineQueue:
             raise QueueError(f"invalid queued message file: {path.name}") from exc
 
     async def _increment_attempts(self, message: QueuedMessage) -> None:
+        path = await asyncio.to_thread(self._message_path_for_drop, message.id)
+        if path is None:
+            return
+        sequence = int(path.stem)
         updated = QueuedMessage(
             id=message.id,
             topic=message.topic,
@@ -143,7 +180,7 @@ class OfflineQueue:
             created_at=message.created_at,
             attempts=message.attempts + 1,
         )
-        await asyncio.to_thread(self._write_message, updated)
+        await asyncio.to_thread(self._write_message, updated, sequence)
 
 
 __all__ = ["OfflineQueue", "PublishFn", "QueuedMessage"]

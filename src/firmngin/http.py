@@ -6,39 +6,29 @@ import asyncio
 import hmac
 import mimetypes
 import ssl
-import tempfile
 import time
 from hashlib import sha256
 from pathlib import Path
 from types import TracebackType
+from typing import TYPE_CHECKING, Any
 
-import httpx
-
+from firmngin._pem import TempPemFiles
 from firmngin.config import ClientConfig
 from firmngin.exceptions import ConnectionError
 from firmngin.payloads import Entity, entity_key
 
+if TYPE_CHECKING:
+    import httpx
 
-class _TempPemFiles:
-    """Keep PEM strings available as files for clients that require file paths."""
 
-    def __init__(self) -> None:
-        self._files: list[Path] = []
-
-    def write(self, content: str | None) -> str | None:
-        if content is None:
-            return None
-        with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as file:
-            file.write(content)
-            file.flush()
-            path = Path(file.name)
-        self._files.append(path)
-        return str(path)
-
-    def cleanup(self) -> None:
-        for path in self._files:
-            path.unlink(missing_ok=True)
-        self._files.clear()
+def _require_httpx() -> Any:
+    try:
+        import httpx  # noqa: PLC0415
+    except ImportError as exc:
+        raise ImportError(
+            "httpx is required for HTTP features. Install with: pip install firmngin[http]"
+        ) from exc
+    return httpx
 
 
 def _device_signature(device_key: str, message: str) -> str:
@@ -48,8 +38,7 @@ def _device_signature(device_key: str, message: str) -> str:
 def _ssl_context(config: ClientConfig) -> ssl.SSLContext | bool:
     if config.insecure:
         return False
-    context = ssl.create_default_context(cadata=config.keys.service_ca_cert)
-    return context
+    return ssl.create_default_context(cadata=config.keys.service_ca_cert)
 
 
 class DeviceHttpClient:
@@ -57,7 +46,8 @@ class DeviceHttpClient:
 
     def __init__(self, config: ClientConfig) -> None:
         self._config = config
-        self._pem_files = _TempPemFiles()
+        self._pem_files = TempPemFiles()
+        self._client: httpx.AsyncClient | None = None
 
     async def __aenter__(self) -> DeviceHttpClient:
         return self
@@ -68,12 +58,19 @@ class DeviceHttpClient:
         _exc: BaseException | None,
         _tb: TracebackType | None,
     ) -> None:
-        self.close()
+        await self.aclose()
 
     def close(self) -> None:
         self._pem_files.cleanup()
 
+    async def aclose(self) -> None:
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
+        self._pem_files.cleanup()
+
     async def upload_image(self, entity: Entity | str | int, image: str | Path) -> str:
+        httpx = _require_httpx()
         key = entity_key(entity)
         image_path = Path(image)
         if not image_path.name:
@@ -104,17 +101,22 @@ class DeviceHttpClient:
         form = {"entity_key": key}
         url = f"{self._config.api_base_url.rstrip('/')}{path}"
 
+        client = await self._get_client(httpx, cert)
         try:
-            async with httpx.AsyncClient(
+            response = await client.post(url, headers=headers, data=form, files=files)
+            response.raise_for_status()
+            return response.text
+        except httpx.HTTPError as exc:
+            raise ConnectionError("image upload failed") from exc
+
+    async def _get_client(self, httpx: Any, cert: tuple[str, str] | None) -> httpx.AsyncClient:
+        if self._client is None:
+            self._client = httpx.AsyncClient(
                 cert=cert,
                 timeout=self._config.connect_timeout_seconds,
                 verify=_ssl_context(self._config),
-            ) as client:
-                response = await client.post(url, headers=headers, data=form, files=files)
-                response.raise_for_status()
-                return response.text
-        except httpx.HTTPError as exc:
-            raise ConnectionError("image upload failed") from exc
+            )
+        return self._client
 
 
 __all__ = ["DeviceHttpClient"]

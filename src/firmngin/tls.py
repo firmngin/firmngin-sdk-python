@@ -33,7 +33,7 @@ def _fingerprint_for_host(
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         context.check_hostname = False
         context.verify_mode = ssl.CERT_NONE
-    with socket.create_connection((host, port), timeout=timeout) as tcp_socket:
+    with socket.create_connection((host, port), timeout=timeout) as tcp_socket:  # noqa: SIM117
         with context.wrap_socket(tcp_socket, server_hostname=host) as tls_socket:
             certificate = tls_socket.getpeercert(binary_form=True)
     if certificate is None:

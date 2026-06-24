@@ -16,9 +16,7 @@ def test_aes_128_gcm_encrypt_matches_known_vector() -> None:
     packet = aes_gcm_encrypt(key, plaintext, nonce=nonce)
 
     assert packet.hex() == (
-        "000000000000000000000000"
-        "0388dace60b6a392f328c2b971b2fe78"
-        "ab6e47d42cec13bdf53a67b21257bddf"
+        "0000000000000000000000000388dace60b6a392f328c2b971b2fe78ab6e47d42cec13bdf53a67b21257bddf"
     )
 
 

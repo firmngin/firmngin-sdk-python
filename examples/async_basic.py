@@ -1,14 +1,12 @@
-"""Basic async Firmngin device example.
-
-This is the intended high-level application shape. Routing, encryption, and
-retry handling are managed inside FirmnginClient.
-"""
+"""Basic async Firmngin device example."""
 
 from __future__ import annotations
 
 import asyncio
 
-from firmngin import ClientConfig, Entity, Event, FirmnginClient, Init, KeysConfig, Payment
+from firmngin import AsyncClient, ClientConfig, Entity, Event, Init, Payment
+
+relay = Entity("1")
 
 
 async def handle_payment(payment: Payment) -> None:
@@ -25,10 +23,9 @@ async def handle_init(init: Init) -> None:
 
 
 async def main() -> None:
-    config = ClientConfig(keys=KeysConfig.from_file("keys.json"))
-    relay = Entity("relay")
+    config = ClientConfig.from_file("keys.json")
 
-    async with FirmnginClient(config) as client:
+    async with AsyncClient(config) as client:
         client.on(Event.PAYMENT, handle_payment)
         client.on(Event.INIT, handle_init)
 

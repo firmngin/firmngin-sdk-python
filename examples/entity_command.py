@@ -1,23 +1,20 @@
-"""Handle entity commands from Firmngin.
-
-Use this when the server/platform sends an instruction to one entity.
-"""
+"""Handle entity commands from Firmngin."""
 
 from __future__ import annotations
 
 import asyncio
 
-from firmngin import ClientConfig, Entity, EntityCommand, FirmnginClient, KeysConfig
-
+from firmngin import AsyncClient, ClientConfig, Entity, EntityCommand
 
 relay = Entity(1)
 temperature = Entity("2")
 
 
 async def main() -> None:
-    config = ClientConfig(keys=KeysConfig.from_file("keys.json"))
+    config = ClientConfig.from_file("keys.json")
 
-    async with FirmnginClient(config) as client:
+    async with AsyncClient(config) as client:
+
         @client.on_entity(relay)
         async def handle_relay(command: EntityCommand) -> None:
             print("relay command:", command.value)

@@ -11,8 +11,7 @@ from pathlib import Path
 from flask import Flask, request
 from werkzeug.utils import secure_filename
 
-from firmngin import ClientConfig, Entity, EntityCommand, Event, FirmnginClient, KeysConfig, Payment
-
+from firmngin import AsyncClient, ClientConfig, Entity, EntityCommand, Event, Payment
 
 BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = BASE_DIR / "uploads"
@@ -26,37 +25,35 @@ app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY", "dev-only")
 app.config["UPLOAD_FOLDER"] = UPLOAD_DIR
 
-client: FirmnginClient | None = None
+async_client: AsyncClient | None = None
 loop: asyncio.AbstractEventLoop | None = None
 
 
-def create_client() -> FirmnginClient:
-    config = ClientConfig(keys=KeysConfig.from_file(KEYS_PATH))
-    device_client = FirmnginClient(config)
+def create_client() -> AsyncClient:
+    config = ClientConfig.from_file(KEYS_PATH)
+    device_client = AsyncClient(config)
 
     @device_client.on(Event.PAYMENT)
     async def handle_payment(payment: Payment) -> None:
         status = "success" if payment.is_success else "pending"
-        print(
-            f"payment {status}: order_id={payment.order_id} item={payment.item_title}")
+        print(f"payment {status}: order_id={payment.order_id} item={payment.item_title}")
 
     @device_client.on_entity(relay)
     async def handle_relay(command: EntityCommand) -> None:
-        print(
-            f"relay command received: key={command.key} value={command.value}")
+        print(f"relay command received: key={command.key} value={command.value}")
 
     return device_client
 
 
 async def run_device_client() -> None:
-    global client
+    global async_client
 
     try:
-        client = create_client()
-        await client.connect()
+        async_client = create_client()
+        await async_client.connect()
         print("firmngin client connected")
-        await client.request_init()
-        await client.run()
+        await async_client.request_init()
+        await async_client.run()
     except Exception as exc:
         print(f"firmngin client stopped: {exc}")
 
@@ -70,7 +67,7 @@ def start_device_worker() -> None:
 
 
 def submit(coro: object) -> object:
-    if loop is None or client is None:
+    if loop is None or async_client is None:
         raise RuntimeError("Firmngin client is not ready")
     future = asyncio.run_coroutine_threadsafe(coro, loop)
     return future.result(timeout=20)
@@ -89,12 +86,12 @@ def update_relay() -> tuple[dict[str, str], int]:
     if value not in {"on", "off"}:
         return {"error": "value must be on or off"}, 400
 
-    current_client = client
-    if current_client is None:
+    current = async_client
+    if current is None:
         return {"error": "Firmngin client is not ready"}, 503
 
     try:
-        submit(current_client.push_entity(relay, value))
+        submit(current.push_entity(relay, value))
         print(f"relay state sent: {value}")
         return {"status": "sent", "relay": value}, 200
     except Exception as exc:
@@ -110,16 +107,18 @@ def upload_image() -> tuple[dict[str, str], int]:
 
     filename = secure_filename(uploaded.filename)
     suffix = Path(filename).suffix or ".jpg"
-    current_client = client
-    if current_client is None:
+    current = async_client
+    if current is None:
         return {"error": "Firmngin client is not ready"}, 503
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, dir=app.config["UPLOAD_FOLDER"]) as file:
+    with tempfile.NamedTemporaryFile(
+        delete=False, suffix=suffix, dir=app.config["UPLOAD_FOLDER"]
+    ) as file:
         uploaded.save(file)
         image_path = Path(file.name)
 
     try:
-        submit(current_client.upload_image(camera, image_path))
+        submit(current.upload_image(camera, image_path))
         print(f"image uploaded: {filename}")
         return {"status": "uploaded", "filename": filename}, 200
     except Exception as exc:

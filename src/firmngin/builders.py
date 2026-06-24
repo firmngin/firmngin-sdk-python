@@ -19,7 +19,9 @@ class BatchState:
         self._client = client
         self._entries: list[dict[str, str]] = []
 
-    def add(self, key: Entity | str | int, value: Any, *, decimals: int | None = None) -> BatchState:
+    def add(
+        self, key: Entity | str | int, value: Any, *, decimals: int | None = None
+    ) -> BatchState:
         self._entries.append({"k": entity_key(key), "v": entity_value(value, decimals=decimals)})
         return self
 

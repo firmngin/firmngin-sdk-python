@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import time
+from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional, overload
+from typing import Any, Optional, cast, overload
 
 from firmngin._paths import (
     get_path_device_status,
@@ -17,9 +19,6 @@ from firmngin._paths import (
     get_path_init,
     get_path_lwt,
     get_path_merchant_status,
-    get_path_metadata_on_expired,
-    get_path_metadata_on_pending,
-    get_path_metadata_on_success,
     get_path_payment,
     get_path_pending_payment,
     get_path_ping,
@@ -32,7 +31,7 @@ from firmngin._paths import (
 )
 from firmngin.builders import BatchState, LocationUpdate
 from firmngin.config import ClientConfig
-from firmngin.crypto import aes_gcm_decrypt, aes_gcm_encrypt
+from firmngin.crypto import AesGcmSession
 from firmngin.exceptions import ConnectionError, ReconnectError
 from firmngin.http import DeviceHttpClient
 from firmngin.logging import get_logger
@@ -63,6 +62,8 @@ EventCallback = Callable[[Any], Optional[Awaitable[None]]]
 EventDecorator = Callable[[EventCallback], EventCallback]
 EntityCommandDecorator = Callable[[EntityCommandCallback], EntityCommandCallback]
 
+_SKIP_DECRYPT_SUFFIXES = frozenset({"mop", "moe", "mos"})
+
 
 class Event(str, Enum):
     """High-level Firmngin device events."""
@@ -80,19 +81,38 @@ class Event(str, Enum):
     ERROR = "error"
 
 
-class FirmnginClient:
-    """Python-native Firmngin device client.
+_EVENT_CALLBACK_ATTRS: dict[Event, str] = {
+    Event.PAYMENT: "_payment_callbacks",
+    Event.PAYMENT_PENDING: "_payment_pending_callbacks",
+    Event.PAYMENT_SUCCESS: "_payment_success_callbacks",
+    Event.INIT: "_init_callbacks",
+    Event.MERCHANT_STATUS: "_merchant_status_callbacks",
+    Event.VERIFICATION: "_verification_callbacks",
+    Event.PIN: "_pin_callbacks",
+    Event.DEVICE_STATUS: "_device_status_callbacks",
+    Event.ENTITY_COMMAND: "_entity_command_callbacks",
+    Event.ACTIVE_SESSION: "_active_session_callbacks",
+    Event.ERROR: "_error_callbacks",
+}
 
-    Transport, encryption, and retry handling are internal implementation details.
-    Public callers should interact through callbacks and device-level commands such
-    as ``push_entity``.
-    """
+
+class AsyncClient:
+    """Async Firmngin device client."""
 
     def __init__(self, config: ClientConfig) -> None:
         self.config = config
         self._mqtt = MqttTransport(config)
         self._http = DeviceHttpClient(config)
-        self._offline_queue = OfflineQueue(config.queue_path) if config.queue_path is not None else None
+        self._crypto = AesGcmSession(config.keys.decryptor_key)
+        self._offline_queue = (
+            OfflineQueue(
+                config.queue_path,
+                max_size=config.queue_max_size,
+                max_bytes=config.queue_max_bytes,
+            )
+            if config.queue_path is not None
+            else None
+        )
         self._stopped = False
         self._debug = False
         self._logger = get_logger()
@@ -104,10 +124,11 @@ class FirmnginClient:
         self._verification_callbacks: list[EventCallback] = []
         self._pin_callbacks: list[EventCallback] = []
         self._device_status_callbacks: list[EventCallback] = []
-        self._entity_command_callbacks: list[EventCallback] = []
+        self._entity_command_callbacks: list[EntityCommandCallback] = []
+        self._entity_callbacks: dict[str, list[EntityCommandCallback]] = {}
         self._active_session_callbacks: list[EventCallback] = []
         self._error_callbacks: list[EventCallback] = []
-        self._local_entity_values: dict[str, str] = {}
+        self._local_entity_values: OrderedDict[str, str] = OrderedDict()
         self._current_order_id = ""
         self._merchant_status = ""
         self._session_end_requested = False
@@ -117,7 +138,7 @@ class FirmnginClient:
         self._firmware_target_model = ""
         self._last_synced_firmware_version = ""
 
-    async def __aenter__(self) -> FirmnginClient:
+    async def __aenter__(self) -> AsyncClient:
         return self
 
     async def __aexit__(self, *_exc: object) -> None:
@@ -134,93 +155,51 @@ class FirmnginClient:
         event: Event | str,
         callback: EventCallback | None = None,
     ) -> EventCallback | EventDecorator:
-        """Register an event handler.
-
-        This mirrors the Arduino library's event-driven style while keeping wire
-        topics internal to the SDK.
-        """
+        """Register an event handler."""
         normalized = Event(event)
 
         def register(handler: EventCallback) -> EventCallback:
-            if normalized is Event.PAYMENT:
-                self._payment_callbacks.append(handler)
-            elif normalized is Event.PAYMENT_PENDING:
-                self._payment_pending_callbacks.append(handler)
-            elif normalized is Event.PAYMENT_SUCCESS:
-                self._payment_success_callbacks.append(handler)
-            elif normalized is Event.INIT:
-                self._init_callbacks.append(handler)
-            elif normalized is Event.MERCHANT_STATUS:
-                self._merchant_status_callbacks.append(handler)
-            elif normalized is Event.VERIFICATION:
-                self._verification_callbacks.append(handler)
-            elif normalized is Event.PIN:
-                self._pin_callbacks.append(handler)
-            elif normalized is Event.DEVICE_STATUS:
-                self._device_status_callbacks.append(handler)
-            elif normalized is Event.ENTITY_COMMAND:
-                self._entity_command_callbacks.append(handler)
-            elif normalized is Event.ACTIVE_SESSION:
-                self._active_session_callbacks.append(handler)
-            elif normalized is Event.ERROR:
-                self._error_callbacks.append(handler)
+            self._callbacks_for_event(normalized).append(handler)
             return handler
 
         if callback is None:
             return register
         return register(callback)
 
-    def on_payment(self, callback: PaymentCallback) -> PaymentCallback:
-        self._payment_callbacks.append(callback)
-        return callback
+    def off(self, event: Event | str, callback: EventCallback) -> None:
+        """Remove one handler registered with :meth:`on`."""
+        callbacks = self._callbacks_for_event(Event(event))
+        with contextlib.suppress(ValueError):
+            callbacks.remove(callback)
 
-    def on_payment_pending(self, callback: PaymentCallback) -> PaymentCallback:
-        self._payment_pending_callbacks.append(callback)
-        return callback
+    def off_entity(self, entity: Entity | str | int, callback: EntityCommandCallback) -> None:
+        """Remove one per-entity handler registered with :meth:`on_entity`."""
+        target = entity_key(entity)
+        handlers = self._entity_callbacks.get(target, [])
+        with contextlib.suppress(ValueError):
+            handlers.remove(callback)
 
-    def on_payment_success(self, callback: PaymentCallback) -> PaymentCallback:
-        self._payment_success_callbacks.append(callback)
-        return callback
-
-    def on_init(self, callback: InitCallback) -> InitCallback:
-        self._init_callbacks.append(callback)
-        return callback
-
-    def on_merchant_status(self, callback: MerchantStatusCallback) -> MerchantStatusCallback:
-        self._merchant_status_callbacks.append(callback)
-        return callback
-
-    def on_verification(self, callback: VerificationCallback) -> VerificationCallback:
-        self._verification_callbacks.append(callback)
-        return callback
-
-    def on_pin(self, callback: VerificationCallback) -> VerificationCallback:
-        self._pin_callbacks.append(callback)
-        return callback
-
-    def on_device_status(self, callback: DeviceStatusCallback) -> DeviceStatusCallback:
-        self._device_status_callbacks.append(callback)
-        return callback
-
-    def on_entity_command(self, callback: EntityCommandCallback) -> EntityCommandCallback:
-        self._entity_command_callbacks.append(callback)
-        return callback
-
-    def on_active_session(self, callback: ActiveSessionCallback) -> ActiveSessionCallback:
-        self._active_session_callbacks.append(callback)
-        return callback
-
-    def on_error(self, callback: ErrorCallback) -> ErrorCallback:
-        self._error_callbacks.append(callback)
-        return callback
+    def clear_handlers(self, event: Event | str | None = None) -> None:
+        """Remove all handlers for one event, or every event when omitted."""
+        if event is None:
+            self._payment_callbacks.clear()
+            self._payment_pending_callbacks.clear()
+            self._payment_success_callbacks.clear()
+            self._init_callbacks.clear()
+            self._merchant_status_callbacks.clear()
+            self._verification_callbacks.clear()
+            self._pin_callbacks.clear()
+            self._device_status_callbacks.clear()
+            self._entity_command_callbacks.clear()
+            self._entity_callbacks.clear()
+            self._active_session_callbacks.clear()
+            self._error_callbacks.clear()
+            return
+        self._callbacks_for_event(Event(event)).clear()
 
     def set_debug(self, enabled: bool = True) -> None:
         """Enable or disable SDK debug logging."""
         self._debug = enabled
-
-    def setDebug(self, enabled: bool = True) -> None:  # noqa: N802
-        """Arduino-style alias for ``set_debug``."""
-        self.set_debug(enabled)
 
     @overload
     def on_entity(
@@ -241,26 +220,11 @@ class FirmnginClient:
         entity: Entity | str | int,
         callback: EntityCommandCallback | None = None,
     ) -> EntityCommandCallback | EntityCommandDecorator:
-        """Register a handler for commands targeting one entity.
-
-        Can be used directly:
-
-        ``client.on_entity(relay, handle_relay)``
-
-        Or as a decorator:
-
-        ``@client.on_entity(relay)``
-        """
+        """Register a handler for commands targeting one entity."""
         target = entity_key(entity)
 
         def register(handler: EntityCommandCallback) -> EntityCommandCallback:
-            async def filtered(command: EntityCommand) -> None:
-                if command.key == target:
-                    result = handler(command)
-                    if isinstance(result, Awaitable):
-                        await result
-
-            self._entity_command_callbacks.append(filtered)
+            self._entity_callbacks.setdefault(target, []).append(handler)
             return handler
 
         if callback is None:
@@ -275,8 +239,7 @@ class FirmnginClient:
         await self._subscribe_default_topics()
         await self._mqtt.publish(get_path_lwt(self.config.keys.device_id), b"1", qos=1, retain=True)
         await self.sync_firmware_info()
-        if self._offline_queue is not None:
-            await self._offline_queue.drain(self._publish_encrypted_bytes)
+        await self._drain_offline_queue()
 
     async def run(self) -> None:
         attempts = 0
@@ -315,12 +278,14 @@ class FirmnginClient:
         try:
             if self._mqtt.is_connected:
                 try:
-                    await self._mqtt.publish(get_path_lwt(self.config.keys.device_id), b"0", qos=1, retain=True)
+                    await self._mqtt.publish(
+                        get_path_lwt(self.config.keys.device_id), b"0", qos=1, retain=True
+                    )
                 except Exception as exc:
                     await self._handle_runtime_error(exc)
         finally:
             await self._mqtt.disconnect()
-            self._http.close()
+            await self._http.aclose()
 
     def stop(self) -> None:
         self._stopped = True
@@ -332,14 +297,10 @@ class FirmnginClient:
         *,
         decimals: int | None = None,
     ) -> None:
-        """Publish one entity update.
-
-        Topic selection, serialization, encryption, queueing, and MQTT publish are
-        handled inside the client implementation.
-        """
+        """Publish one entity update."""
         key = entity_key(entity)
         serialized_value = entity_value(value, decimals=decimals)
-        self._local_entity_values[key] = serialized_value
+        self._remember_entity_value(key, serialized_value)
         await self._publish_json(
             get_path_update_entity(self.config.keys.device_id),
             {"k": key, "v": serialized_value},
@@ -350,14 +311,15 @@ class FirmnginClient:
         if not entities:
             raise ValueError("entities must not be empty")
         if isinstance(entities, dict):
-            payload = [{"k": entity_key(key), "v": entity_value(value)} for key, value in entities.items()]
+            payload = [
+                {"k": entity_key(key), "v": entity_value(value)} for key, value in entities.items()
+            ]
         else:
             payload = [
-                {"k": entity_key(item["k"]), "v": entity_value(item["v"])}
-                for item in entities
+                {"k": entity_key(item["k"]), "v": entity_value(item["v"])} for item in entities
             ]
         for item in payload:
-            self._local_entity_values[item["k"]] = item["v"]
+            self._remember_entity_value(item["k"], item["v"])
         await self._publish_json(get_path_update_entities(self.config.keys.device_id), payload)
 
     async def upload_image(
@@ -365,10 +327,7 @@ class FirmnginClient:
         entity: Entity | str | int,
         image: str | Path,
     ) -> str:
-        """Upload an image for an entity.
-
-        API path, authentication headers, TLS, and multipart details are internal.
-        """
+        """Upload an image for an entity."""
         return await self._http.upload_image(entity, image)
 
     async def request_init(self) -> None:
@@ -454,6 +413,31 @@ class FirmnginClient:
         self._last_synced_firmware_version = self._firmware_version
         return True
 
+    def _callbacks_for_event(self, event: Event) -> list[EventCallback]:
+        attr = _EVENT_CALLBACK_ATTRS.get(event)
+        if attr is None:
+            raise ValueError(f"unknown event: {event}")
+        return cast(list[EventCallback], getattr(self, attr))
+
+    def _remember_entity_value(self, key: str, value: str) -> None:
+        self._local_entity_values[key] = value
+        self._local_entity_values.move_to_end(key)
+        limit = self.config.max_local_entity_values
+        while len(self._local_entity_values) > limit:
+            self._local_entity_values.popitem(last=False)
+
+    async def _drain_offline_queue(self) -> None:
+        if self._offline_queue is None:
+            return
+        batch = self.config.queue_drain_batch_size
+        while True:
+            drained = await self._offline_queue.drain(self._publish_encrypted_bytes, limit=batch)
+            if drained == 0:
+                return
+            if batch is not None and drained < batch:
+                return
+            await asyncio.sleep(0)
+
     async def _subscribe_default_topics(self) -> None:
         device_id = self.config.keys.device_id
         qos_0_topics = [
@@ -462,9 +446,6 @@ class FirmnginClient:
             get_path_init(device_id),
             get_path_display_pin(device_id),
             get_path_verification_result(device_id),
-            get_path_metadata_on_pending(device_id),
-            get_path_metadata_on_expired(device_id),
-            get_path_metadata_on_success(device_id),
             get_path_ping(device_id),
             get_path_entity_command(device_id),
         ]
@@ -475,7 +456,7 @@ class FirmnginClient:
 
     async def _publish_json(self, topic: str, payload: Any, *, retained: bool = False) -> None:
         encoded = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-        encrypted = aes_gcm_encrypt(bytes.fromhex(self.config.keys.decryptor), encoded)
+        encrypted = self._crypto.encrypt(encoded)
         if not self._mqtt.is_connected:
             if self._offline_queue is not None:
                 await self._offline_queue.enqueue(topic, encrypted, retained)
@@ -492,15 +473,18 @@ class FirmnginClient:
     async def _publish_encrypted_bytes(self, topic: str, payload: bytes, retained: bool) -> None:
         await self._mqtt.publish(topic, payload, qos=1, retain=retained)
 
-    async def _handle_message(self, message: MqttMessage) -> None:
+    async def _handle_message(self, message: MqttMessage) -> None:  # noqa: PLR0912
+        state = message.topic.rsplit("/", 1)[-1]
+        if state in _SKIP_DECRYPT_SUFFIXES:
+            return
+
         try:
-            payload = aes_gcm_decrypt(message.payload, bytes.fromhex(self.config.keys.decryptor)).decode("utf-8")
+            payload = self._crypto.decrypt(message.payload).decode("utf-8")
         except Exception as exc:
             await self._handle_runtime_error(exc)
             return
 
         topic = message.topic
-        state = topic.rsplit("/", 1)[-1]
         try:
             if "/rs/" in topic:
                 await self._dispatch_entity_command(topic, payload)
@@ -540,16 +524,20 @@ class FirmnginClient:
             elif state == "mi":
                 await self._dispatch_many(self._merchant_status_callbacks, payload)
             elif state == "pi":
-                await self._mqtt.publish(get_path_pong(self.config.keys.device_id), payload.encode("utf-8"), qos=0)
+                await self._mqtt.publish(
+                    get_path_pong(self.config.keys.device_id), payload.encode("utf-8"), qos=0
+                )
         except Exception as exc:
             await self._handle_runtime_error(exc)
 
     async def _dispatch_entity_command(self, topic: str, payload: str) -> None:
         key = topic.split("/rs/", 1)[1]
         command = EntityCommand.from_key_value(key, payload)
-        if command.is_valid:
-            self._local_entity_values[key] = payload
-            await self._dispatch_many(self._entity_command_callbacks, command)
+        if not command.is_valid:
+            return
+        self._remember_entity_value(key, payload)
+        await self._dispatch_many(self._entity_callbacks.get(key, []), command)
+        await self._dispatch_many(self._entity_command_callbacks, command)
 
     async def _dispatch_active_session(self) -> None:
         if self._current_order_id == "" or self._merchant_status != "on_active_service":
@@ -564,10 +552,16 @@ class FirmnginClient:
 
     @staticmethod
     async def _dispatch_many(callbacks: list[EventCallback], payload: Any) -> None:
-        for callback in list(callbacks):
+        if not callbacks:
+            return
+        snapshot = list(callbacks)
+
+        async def run_one(callback: EventCallback) -> None:
             result = callback(payload)
             if isinstance(result, Awaitable):
                 await result
+
+        await asyncio.gather(*(run_one(callback) for callback in snapshot))
 
     async def _handle_runtime_error(self, exc: Exception) -> None:
         if self._error_callbacks:
@@ -589,18 +583,10 @@ class FirmnginClient:
         await asyncio.sleep(delay)
 
 
+FirmnginClient = AsyncClient
+
 __all__ = [
-    "ActiveSessionCallback",
-    "DeviceStatusCallback",
-    "EntityCommandCallback",
-    "EntityCommandDecorator",
-    "ErrorCallback",
+    "AsyncClient",
     "Event",
-    "EventCallback",
-    "EventDecorator",
     "FirmnginClient",
-    "InitCallback",
-    "MerchantStatusCallback",
-    "PaymentCallback",
-    "VerificationCallback",
 ]

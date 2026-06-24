@@ -35,7 +35,6 @@ class Payment:
     quantity: int = 1
     is_pending: bool = False
     is_success: bool = False
-    metadata: str = ""
 
     @classmethod
     def from_payload(
@@ -54,7 +53,6 @@ class Payment:
             quantity=max(quantity, 1),
             is_pending=is_pending,
             is_success=is_success,
-            metadata=payload,
         )
 
     @property
@@ -81,7 +79,7 @@ class Verification:
     ttl: int = 0
     pin_met: bool = False
     precondition_met: bool = False
-    metadata: str = ""
+    has_result_keys: bool = False
 
     @classmethod
     def from_payload(cls, payload: str) -> Verification:
@@ -92,13 +90,12 @@ class Verification:
             ttl=int(raw.get("ttl", 0)),
             pin_met=bool(raw.get("pn", False)),
             precondition_met=bool(raw.get("pr", False)),
-            metadata=payload,
+            has_result_keys="pn" in raw,
         )
 
     @property
     def is_valid(self) -> bool:
-        raw = _loads_object(self.metadata) if self.metadata else {}
-        return bool(self.pin or "pn" in raw)
+        return bool(self.pin) or self.has_result_keys
 
     @property
     def has_pin_number(self) -> bool:
@@ -128,7 +125,7 @@ class Init:
     merchant_status: str = ""
     active_order_id: str = ""
     verification_flag: int = 0
-    metadata: str = ""
+    has_merchant_status: bool = False
 
     @classmethod
     def from_payload(cls, payload: str) -> Init:
@@ -138,13 +135,12 @@ class Init:
             merchant_status=str(raw.get("m", "")),
             active_order_id=str(raw.get("oid", "")),
             verification_flag=int(raw.get("vf", 0)),
-            metadata=payload,
+            has_merchant_status="m" in raw,
         )
 
     @property
     def is_valid(self) -> bool:
-        raw = _loads_object(self.metadata) if self.metadata else {}
-        return "m" in raw
+        return self.has_merchant_status
 
     @property
     def is_idle(self) -> bool:
@@ -198,12 +194,11 @@ class DeviceStatus:
     """Device-state payload parsed from Arduino key ``s``."""
 
     state: str = ""
-    metadata: str = ""
 
     @classmethod
     def from_payload(cls, payload: str) -> DeviceStatus:
         raw = _loads_object(payload)
-        return cls(state=str(raw.get("s", "")), metadata=payload)
+        return cls(state=str(raw.get("s", "")))
 
     @property
     def is_valid(self) -> bool:

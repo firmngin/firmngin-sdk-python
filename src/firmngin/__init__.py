@@ -2,8 +2,8 @@
 
 from firmngin._version import __version__
 from firmngin.builders import BatchState, LocationUpdate
-from firmngin.client import Event, FirmnginClient
-from firmngin.client_sync import SyncFirmnginClient
+from firmngin.client import AsyncClient, Event, FirmnginClient
+from firmngin.client_sync import Client, SyncClient, SyncFirmnginClient
 from firmngin.config import ClientConfig, KeysConfig, ValidationMode
 from firmngin.payloads import (
     DeviceStatus,
@@ -18,7 +18,9 @@ from firmngin.session import ActiveSession
 
 __all__ = [
     "ActiveSession",
+    "AsyncClient",
     "BatchState",
+    "Client",
     "ClientConfig",
     "DeviceStatus",
     "Entity",
@@ -30,6 +32,7 @@ __all__ = [
     "KeysConfig",
     "LocationUpdate",
     "Payment",
+    "SyncClient",
     "SyncFirmnginClient",
     "ValidationMode",
     "Verification",

@@ -1,19 +1,21 @@
-"""Upload an entity image."""
+"""Upload an entity image.
+
+Requires: pip install firmngin[http]
+"""
 
 from __future__ import annotations
 
 import asyncio
 
-from firmngin import ClientConfig, Entity, FirmnginClient, KeysConfig
-
+from firmngin import AsyncClient, ClientConfig, Entity
 
 camera = Entity("camera")
 
 
 async def main() -> None:
-    config = ClientConfig(keys=KeysConfig.from_file("keys.json"))
+    config = ClientConfig.from_file("keys.json")
 
-    async with FirmnginClient(config) as client:
+    async with AsyncClient(config) as client:
         await client.connect()
         await client.upload_image(camera, "snapshot.jpg")
 

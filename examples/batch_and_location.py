@@ -4,15 +4,16 @@ from __future__ import annotations
 
 import asyncio
 
-from firmngin import ClientConfig, Entity, FirmnginClient, KeysConfig
+from firmngin import AsyncClient, ClientConfig, Entity
+
+relay = Entity(1)
+temperature = Entity("2")
 
 
 async def main() -> None:
-    config = ClientConfig(keys=KeysConfig.from_file("keys.json"))
-    relay = Entity(1)
-    temperature = Entity("2")
+    config = ClientConfig.from_file("keys.json")
 
-    async with FirmnginClient(config) as client:
+    async with AsyncClient(config) as client:
         await client.connect()
 
         batch = client.push_batch_entities()

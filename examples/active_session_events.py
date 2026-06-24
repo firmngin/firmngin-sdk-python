@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import asyncio
 
-from firmngin import ActiveSession, ClientConfig, Event, FirmnginClient, KeysConfig
+from firmngin import ActiveSession, AsyncClient, ClientConfig, Event
 
 
 async def main() -> None:
-    config = ClientConfig(keys=KeysConfig.from_file("keys.json"))
+    config = ClientConfig.from_file("keys.json")
 
-    async with FirmnginClient(config) as client:
+    async with AsyncClient(config) as client:
+
         @client.on(Event.ACTIVE_SESSION)
         async def handle_active_session(session: ActiveSession) -> None:
             if session.can_run:

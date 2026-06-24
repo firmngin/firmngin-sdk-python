@@ -45,7 +45,7 @@ Device events and endpoint actions are printed to the Flask process output.
 
 ## What It Demonstrates
 
-- Starts `FirmnginClient` in a background thread.
+- Starts `AsyncClient` in a background thread.
 - Prints payment and relay command events.
 - Publishes relay state with `client.push_entity(relay, value)`.
 - Uploads an image with `client.upload_image(camera, file_path)`.

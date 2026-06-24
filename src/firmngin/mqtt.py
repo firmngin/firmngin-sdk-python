@@ -4,15 +4,14 @@ from __future__ import annotations
 
 import contextlib
 import ssl
-import tempfile
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 import aiomqtt
 
 from firmngin._paths import get_path_lwt
+from firmngin._pem import TempPemFiles
 from firmngin.config import ClientConfig
 from firmngin.exceptions import ConnectionError
 from firmngin.tls import verify_mqtt_fingerprint
@@ -22,31 +21,10 @@ MqttError = aiomqtt.MqttError
 
 @dataclass(frozen=True)
 class MqttMessage:
-    """Normalized MQTT message consumed by FirmnginClient."""
+    """Normalized MQTT message consumed by AsyncClient."""
 
     topic: str
     payload: bytes
-
-
-class _TempPemFiles:
-    def __init__(self) -> None:
-        self._files: list[Path] = []
-
-    def write(self, content: str | None) -> str | None:
-        if content is None:
-            return None
-        with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as file:
-            file.write(content)
-            file.flush()
-            path = Path(file.name)
-        self._files.append(path)
-        return str(path)
-
-    def cleanup(self) -> None:
-        for path in self._files:
-            with contextlib.suppress(FileNotFoundError):
-                path.unlink()
-        self._files.clear()
 
 
 def _payload_bytes(payload: Any) -> bytes:
@@ -64,7 +42,7 @@ class MqttTransport:
 
     def __init__(self, config: ClientConfig) -> None:
         self._config = config
-        self._pem_files = _TempPemFiles()
+        self._pem_files = TempPemFiles()
         self._client: Any | None = None
         self._context: Any | None = None
         self._connected = False
@@ -114,19 +92,23 @@ class MqttTransport:
             raise ConnectionError("MQTT connection failed") from exc
 
     async def disconnect(self) -> None:
-        if self._context is not None:
-            with contextlib.suppress(Exception):
-                await self._context.__aexit__(None, None, None)
-        self._context = None
-        self._client = None
-        self._connected = False
-        self._pem_files.cleanup()
+        try:
+            if self._context is not None:
+                with contextlib.suppress(Exception):
+                    await self._context.__aexit__(None, None, None)
+        finally:
+            self._context = None
+            self._client = None
+            self._connected = False
+            self._pem_files.cleanup()
 
     async def subscribe(self, topic: str, qos: int = 0) -> None:
         client = self._require_client()
         await client.subscribe(topic, qos=qos)
 
-    async def publish(self, topic: str, payload: bytes | str, *, qos: int = 1, retain: bool = False) -> None:
+    async def publish(
+        self, topic: str, payload: bytes | str, *, qos: int = 1, retain: bool = False
+    ) -> None:
         client = self._require_client()
         await client.publish(topic, payload=payload, qos=qos, retain=retain)
 

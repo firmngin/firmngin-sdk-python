@@ -33,7 +33,7 @@ def test_keys_config_loads_keys_json_example(keys_example_path: Path) -> None:
     keys = KeysConfig.from_file(keys_example_path)
 
     assert keys.device_id == "dev-0000000000-aaaaaaaaaa"
-    assert len(bytes.fromhex(keys.decryptor)) == 16
+    assert len(keys.decryptor_key) == 16
     assert keys.validation_mode == "both"
 
 
@@ -50,7 +50,7 @@ def test_keys_config_rejects_missing_decryptor() -> None:
     data.pop("decryptor")
 
     with pytest.raises(ValueError, match="decryptor"):
-        KeysConfig.model_validate(data)
+        KeysConfig.from_dict(data)
 
 
 @pytest.mark.parametrize(
@@ -66,16 +66,23 @@ def test_keys_config_rejects_invalid_decryptor(decryptor: str) -> None:
     data["decryptor"] = decryptor
 
     with pytest.raises(ValueError, match="decryptor"):
-        KeysConfig.model_validate(data)
+        KeysConfig.from_dict(data)
 
 
 def test_keys_config_accepts_32_byte_decryptor() -> None:
     data = _valid_keys_data()
     data["decryptor"] = "11" * 32
 
-    keys = KeysConfig.model_validate(data)
+    keys = KeysConfig.from_dict(data)
 
-    assert bytes.fromhex(keys.decryptor) == bytes.fromhex("11" * 32)
+    assert keys.decryptor_key == bytes.fromhex("11" * 32)
+
+
+def test_keys_config_decryptor_key_is_cached() -> None:
+    keys = KeysConfig.from_dict(_valid_keys_data())
+
+    assert keys.decryptor_key == bytes.fromhex(keys.decryptor)
+    assert keys.decryptor_key is keys.decryptor_key
 
 
 def test_pin_mode_requires_fingerprint() -> None:
@@ -84,7 +91,7 @@ def test_pin_mode_requires_fingerprint() -> None:
     data.pop("fingerprint_sha256")
 
     with pytest.raises(ValueError, match="fingerprint_sha256"):
-        KeysConfig.model_validate(data)
+        KeysConfig.from_dict(data)
 
 
 def test_ca_mode_requires_ca_cert() -> None:
@@ -93,7 +100,7 @@ def test_ca_mode_requires_ca_cert() -> None:
     data.pop("ca_cert")
 
     with pytest.raises(ValueError, match="ca_cert"):
-        KeysConfig.model_validate(data)
+        KeysConfig.from_dict(data)
 
 
 def test_keys_config_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -109,21 +116,21 @@ def test_keys_config_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_client_config_requires_mtls_material_when_mtls_enabled() -> None:
     data = _valid_keys_data()
     data.pop("client_cert")
-    keys = KeysConfig.model_validate(data)
+    keys = KeysConfig.from_dict(data)
 
     with pytest.raises(ValueError, match="client_cert"):
         ClientConfig(keys=keys)
 
 
 def test_client_config_rejects_insecure_mtls() -> None:
-    keys = KeysConfig.model_validate(_valid_keys_data())
+    keys = KeysConfig.from_dict(_valid_keys_data())
 
     with pytest.raises(ValueError, match="insecure"):
         ClientConfig(keys=keys, insecure=True)
 
 
 def test_client_config_uses_fixed_mqtt_broker() -> None:
-    keys = KeysConfig.model_validate(_valid_keys_data())
+    keys = KeysConfig.from_dict(_valid_keys_data())
 
     config = ClientConfig(keys=keys)
 
@@ -133,14 +140,23 @@ def test_client_config_uses_fixed_mqtt_broker() -> None:
 
 @pytest.mark.parametrize("field_name", ["mqtt_server", "mqtt_port"])
 def test_client_config_rejects_user_supplied_mqtt_broker_fields(field_name: str) -> None:
-    keys = KeysConfig.model_validate(_valid_keys_data())
+    keys = KeysConfig.from_dict(_valid_keys_data())
 
-    with pytest.raises(ValueError, match=field_name):
-        ClientConfig.model_validate({"keys": keys, field_name: "not-user-configurable"})
+    with pytest.raises(TypeError):
+        ClientConfig(keys=keys, **{field_name: "not-user-configurable"})
+
+
+def test_client_config_from_file(tmp_path: Path) -> None:
+    path = tmp_path / "keys.json"
+    path.write_text(json.dumps(_valid_keys_data()), encoding="utf-8")
+
+    config = ClientConfig.from_file(path)
+
+    assert config.keys.device_id == "dev-1782217379-d5d1680b"
 
 
 def test_client_config_queue_path_is_optional() -> None:
-    keys = KeysConfig.model_validate(_valid_keys_data())
+    keys = KeysConfig.from_dict(_valid_keys_data())
 
     config = ClientConfig(keys=keys)
 
@@ -148,7 +164,7 @@ def test_client_config_queue_path_is_optional() -> None:
 
 
 def test_client_config_has_reconnect_defaults() -> None:
-    keys = KeysConfig.model_validate(_valid_keys_data())
+    keys = KeysConfig.from_dict(_valid_keys_data())
 
     config = ClientConfig(keys=keys)
 
@@ -159,7 +175,7 @@ def test_client_config_has_reconnect_defaults() -> None:
 
 
 def test_client_config_rejects_invalid_reconnect_delay_order() -> None:
-    keys = KeysConfig.model_validate(_valid_keys_data())
+    keys = KeysConfig.from_dict(_valid_keys_data())
 
     with pytest.raises(ValueError, match="reconnect_initial_delay_seconds"):
         ClientConfig(
