@@ -25,4 +25,4 @@ cp keys.json.example keys.json
 python examples/async_basic.py
 ```
 
-Docs: [firmngin.dev — Raspberry Pi SDK](https://firmngin.dev/docs/libraries/raspi)
+Docs: [Introduction — Python SDK](https://firmngin.dev/docs/libraries/raspi)

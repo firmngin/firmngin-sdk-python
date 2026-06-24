@@ -7,9 +7,10 @@
 [![Python](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-Connect Python apps to [Firmngin](https://firmngin.dev) as a device — Raspberry Pi, Linux gateways, integration tests, and server tooling.
+Python SDK for [Firmngin](https://firmngin.dev) as a device client. It supports both synchronous and asynchronous programming styles, with a focus on IoT devices and event-driven architectures.
+secure communication (mTLS), OTA firmware updates, image upload, GPS location, and payment/verification flows for the Firmngin platform.
 
-**Docs:** [firmngin.dev/libraries/raspi](https://firmngin.dev/docs/libraries/raspi)
+**Docs:** [Introduction](https://firmngin.dev/docs/libraries/raspi) — Python SDK menu on [firmngin.dev/docs](https://firmngin.dev/docs)
 
 ## Install
 
@@ -31,14 +32,7 @@ pip install git+https://github.com/firmngin/firmngin-sdk-python.git
 
 ## Dependencies
 
-Core install — **two packages only**:
-
-| Package        | Purpose            |
-| -------------- | ------------------ |
-| `aiomqtt`      | MQTT transport     |
-| `cryptography` | TLS + AES-GCM E2EE |
-
-Everything else is Python stdlib. HTTP upload is opt-in via `firmngin[http]`.
+This SDK needs a few extra packages `aiomqtt` and `cryptography` for Messages transport and TLS/AES-GCM end-to-end encryption.
 
 ## Client vs AsyncClient
 
