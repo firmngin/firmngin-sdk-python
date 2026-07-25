@@ -15,18 +15,22 @@ from typing import Any, Optional, cast, overload
 from firmngin._banner import print_startup_banner
 from firmngin._paths import (
     get_path_device_status,
+    get_path_dispense,
     get_path_display_pin,
     get_path_entity_command,
     get_path_init,
     get_path_limit_exceeded,
     get_path_lwt,
     get_path_merchant_status,
+    get_path_metadata_on_active_service,
     get_path_metadata_on_expired,
     get_path_metadata_on_pending,
     get_path_metadata_on_success,
+    get_path_metadata_postpaid_ready,
     get_path_near_limit,
     get_path_payment,
     get_path_pending_payment,
+    get_path_postpaid_ready,
     get_path_ping,
     get_path_pong,
     get_path_request_init,
@@ -46,10 +50,15 @@ from firmngin.logging import get_logger
 from firmngin.mqtt import MqttError, MqttMessage, MqttTransport
 from firmngin.payloads import (
     DeviceStatus,
+    Dispense,
     Entity,
     EntityCommand,
     EntityValue,
     Init,
+    KioskBootstrap,
+    KioskMenu,
+    KioskOrder,
+    KioskOrderStatus,
     Payment,
     Usage,
     Verification,
@@ -75,12 +84,19 @@ _LWT_ONLINE = b"1"
 _LWT_OFFLINE = b"0"
 
 
+def _timestamp_millis() -> int:
+    """Return the current Unix epoch timestamp in milliseconds."""
+    return time.time_ns() // 1_000_000
+
+
 class Event(str, Enum):
     """High-level Firmngin device events."""
 
     PAYMENT = "payment"
     PAYMENT_PENDING = "payment.pending"
     PAYMENT_SUCCESS = "payment.success"
+    POSTPAID_READY = "postpaid.ready"
+    DISPENSE = "dispense"
     INIT = "init"
     MERCHANT_STATUS = "merchant_status"
     VERIFICATION = "verification"
@@ -90,8 +106,10 @@ class Event(str, Enum):
     ACTIVE_SESSION = "active_session"
     USAGE = "usage"
     METADATA_PENDING = "metadata.pending"
+    METADATA_ACTIVE_SERVICE = "metadata.active_service"
     METADATA_EXPIRED = "metadata.expired"
     METADATA_SUCCESS = "metadata.success"
+    METADATA_POSTPAID_READY = "metadata.postpaid_ready"
     ERROR = "error"
 
 
@@ -99,6 +117,8 @@ _EVENT_CALLBACK_ATTRS: dict[Event, str] = {
     Event.PAYMENT: "_payment_callbacks",
     Event.PAYMENT_PENDING: "_payment_pending_callbacks",
     Event.PAYMENT_SUCCESS: "_payment_success_callbacks",
+    Event.POSTPAID_READY: "_postpaid_ready_callbacks",
+    Event.DISPENSE: "_dispense_callbacks",
     Event.INIT: "_init_callbacks",
     Event.MERCHANT_STATUS: "_merchant_status_callbacks",
     Event.VERIFICATION: "_verification_callbacks",
@@ -108,8 +128,10 @@ _EVENT_CALLBACK_ATTRS: dict[Event, str] = {
     Event.ACTIVE_SESSION: "_active_session_callbacks",
     Event.USAGE: "_usage_callbacks",
     Event.METADATA_PENDING: "_metadata_pending_callbacks",
+    Event.METADATA_ACTIVE_SERVICE: "_metadata_active_service_callbacks",
     Event.METADATA_EXPIRED: "_metadata_expired_callbacks",
     Event.METADATA_SUCCESS: "_metadata_success_callbacks",
+    Event.METADATA_POSTPAID_READY: "_metadata_postpaid_ready_callbacks",
     Event.ERROR: "_error_callbacks",
 }
 
@@ -139,6 +161,8 @@ class AsyncClient:
         self._payment_callbacks: list[EventCallback] = []
         self._payment_pending_callbacks: list[EventCallback] = []
         self._payment_success_callbacks: list[EventCallback] = []
+        self._postpaid_ready_callbacks: list[EventCallback] = []
+        self._dispense_callbacks: list[EventCallback] = []
         self._init_callbacks: list[EventCallback] = []
         self._merchant_status_callbacks: list[EventCallback] = []
         self._verification_callbacks: list[EventCallback] = []
@@ -149,8 +173,10 @@ class AsyncClient:
         self._active_session_callbacks: list[EventCallback] = []
         self._usage_callbacks: list[EventCallback] = []
         self._metadata_pending_callbacks: list[EventCallback] = []
+        self._metadata_active_service_callbacks: list[EventCallback] = []
         self._metadata_expired_callbacks: list[EventCallback] = []
         self._metadata_success_callbacks: list[EventCallback] = []
+        self._metadata_postpaid_ready_callbacks: list[EventCallback] = []
         self._error_callbacks: list[EventCallback] = []
         self._local_entity_values: OrderedDict[str, str] = OrderedDict()
         self._current_order_id = ""
@@ -209,6 +235,8 @@ class AsyncClient:
             self._payment_callbacks.clear()
             self._payment_pending_callbacks.clear()
             self._payment_success_callbacks.clear()
+            self._postpaid_ready_callbacks.clear()
+            self._dispense_callbacks.clear()
             self._init_callbacks.clear()
             self._merchant_status_callbacks.clear()
             self._verification_callbacks.clear()
@@ -219,8 +247,10 @@ class AsyncClient:
             self._active_session_callbacks.clear()
             self._usage_callbacks.clear()
             self._metadata_pending_callbacks.clear()
+            self._metadata_active_service_callbacks.clear()
             self._metadata_expired_callbacks.clear()
             self._metadata_success_callbacks.clear()
+            self._metadata_postpaid_ready_callbacks.clear()
             self._error_callbacks.clear()
             return
         self._callbacks_for_event(Event(event)).clear()
@@ -363,7 +393,7 @@ class AsyncClient:
         self._remember_entity_value(key, serialized_value)
         await self._publish_json(
             get_path_update_entity(self.config.keys.device_id),
-            {"k": key, "v": serialized_value},
+            {"k": key, "v": serialized_value, "t": _timestamp_millis()},
         )
 
     async def update_entities(self, entities: dict[str, Any] | list[dict[str, Any]]) -> None:
@@ -380,7 +410,10 @@ class AsyncClient:
             ]
         for item in payload:
             self._remember_entity_value(item["k"], item["v"])
-        await self._publish_json(get_path_update_entities(self.config.keys.device_id), payload)
+        await self._publish_json(
+            get_path_update_entities(self.config.keys.device_id),
+            {"t": _timestamp_millis(), "items": payload},
+        )
 
     async def upload_image(
         self,
@@ -390,23 +423,60 @@ class AsyncClient:
         """Upload an image for an entity."""
         return await self._http.upload_image(entity, image)
 
+    async def kiosk_bootstrap(self) -> KioskBootstrap:
+        return await self._http.kiosk_bootstrap()
+
+    async def kiosk_menu(self) -> KioskMenu:
+        return await self._http.kiosk_menu()
+
+    async def kiosk_create_order(
+        self,
+        *,
+        items: list[dict[str, Any]],
+        customer: dict[str, Any] | None = None,
+        client_order_key: str | None = None,
+    ) -> KioskOrder:
+        return await self._http.kiosk_create_order(
+            items=items,
+            customer=customer,
+            client_order_key=client_order_key,
+        )
+
+    async def kiosk_order_status(self, order_id: str) -> KioskOrderStatus:
+        return await self._http.kiosk_order_status(order_id)
+
+    async def kiosk_cancel_order(self, order_id: str) -> dict[str, Any]:
+        return await self._http.kiosk_cancel_order(order_id)
+
     async def request_init(self) -> None:
         """Request the latest init state from Firmngin."""
-        await self._publish_json(get_path_request_init(self.config.keys.device_id), {})
+        await self._publish_json(
+            get_path_request_init(self.config.keys.device_id),
+            {"t": _timestamp_millis()},
+        )
 
     def entity(self, entity: Entity | str | int) -> EntityValue:
         return EntityValue(self._local_entity_values.get(entity_key(entity), ""))
 
     async def end_session(self) -> bool:
-        if self._current_order_id == "" or self._merchant_status != "on_active_service":
+        if self._merchant_status != "on_active_service":
             return False
         now = time.monotonic()
         if self._session_end_requested or now - self._last_session_end_at < 3:
             return False
         self._last_session_end_at = now
+        # _current_order_id may be empty if /pm or /init was not received
+        # (e.g. vending dispense order). Backend resolves the active order
+        # by device_id when oid is empty.
+        oid = self._current_order_id
         await self._publish_json(
             get_path_session_end(self.config.keys.device_id),
-            {"oid": self._current_order_id, "src": "dev", "mid": str(int(now * 1000))},
+            {
+                "oid": oid,
+                "src": "dev",
+                "mid": str(int(now * 1000)),
+                "t": _timestamp_millis(),
+            },
         )
         self._session_end_requested = True
         return True
@@ -510,13 +580,17 @@ class AsyncClient:
             get_path_limit_exceeded(device_id),
             get_path_near_limit(device_id),
             get_path_metadata_on_pending(device_id),
+            get_path_metadata_on_active_service(device_id),
             get_path_metadata_on_expired(device_id),
             get_path_metadata_on_success(device_id),
+            get_path_metadata_postpaid_ready(device_id),
             get_path_ping(device_id),
             get_path_entity_command(device_id),
         ]
         await self._mqtt.subscribe(get_path_payment(device_id), qos=1)
         await self._mqtt.subscribe(get_path_pending_payment(device_id), qos=1)
+        await self._mqtt.subscribe(get_path_postpaid_ready(device_id), qos=1)
+        await self._mqtt.subscribe(get_path_dispense(device_id), qos=1)
         for topic in qos_0_topics:
             await self._mqtt.subscribe(topic, qos=0)
 
@@ -546,6 +620,7 @@ class AsyncClient:
         try:
             payload = self._crypto.decrypt(message.payload).decode("utf-8")
         except Exception as exc:
+            print("[firmngin] failed to decrypt message")
             await self._handle_runtime_error(exc)
             return
 
@@ -564,6 +639,15 @@ class AsyncClient:
                 if payment.is_valid:
                     await self._dispatch_many(self._payment_callbacks, payment)
                     await self._dispatch_many(self._payment_pending_callbacks, payment)
+            elif state == "pr":
+                payment = Payment.from_payload(payload, is_post_paid=True)
+                if payment.is_valid:
+                    self._current_order_id = payment.order_id
+                    await self._dispatch_many(self._postpaid_ready_callbacks, payment)
+            elif state == "dp":
+                dispense = Dispense.from_payload(payload)
+                if dispense.is_valid:
+                    await self._dispatch_many(self._dispense_callbacks, dispense)
             elif state in {"dpin", "vr"}:
                 verification = Verification.from_payload(payload)
                 if verification.is_valid:
@@ -601,10 +685,14 @@ class AsyncClient:
                     await self._dispatch_many(self._usage_callbacks, usage)
             elif state == "mop":
                 await self._dispatch_many(self._metadata_pending_callbacks, payload)
+            elif state == "moa":
+                await self._dispatch_many(self._metadata_active_service_callbacks, payload)
             elif state == "moe":
                 await self._dispatch_many(self._metadata_expired_callbacks, payload)
             elif state == "mos":
                 await self._dispatch_many(self._metadata_success_callbacks, payload)
+            elif state == "mpp":
+                await self._dispatch_many(self._metadata_postpaid_ready_callbacks, payload)
         except Exception as exc:
             await self._handle_runtime_error(exc)
 
