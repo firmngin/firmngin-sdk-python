@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from firmngin.exceptions import PayloadError
@@ -35,6 +35,8 @@ class Payment:
     quantity: int = 1
     is_pending: bool = False
     is_success: bool = False
+    is_post_paid: bool = False
+    is_pre_paid: bool = False
 
     @classmethod
     def from_payload(
@@ -43,6 +45,7 @@ class Payment:
         *,
         is_pending: bool = False,
         is_success: bool = False,
+        is_post_paid: bool = False,
     ) -> Payment:
         raw = _loads_object(payload)
         quantity = int(raw.get("q", 1))
@@ -53,6 +56,8 @@ class Payment:
             quantity=max(quantity, 1),
             is_pending=is_pending,
             is_success=is_success,
+            is_post_paid=is_post_paid,
+            is_pre_paid=not is_post_paid,
         )
 
     @property
@@ -119,23 +124,37 @@ class Verification:
 
 @dataclass(frozen=True)
 class Init:
-    """Init payload parsed from Arduino keys ``e``, ``m``, ``oid``, and ``vf``."""
+    """Init payload with entity config, merchant status, verification, and business mode."""
 
     entities: Any = None
     merchant_status: str = ""
     active_order_id: str = ""
     verification_flag: int = 0
     has_merchant_status: bool = False
+    _mode: int = 1
+    _kiosk: int = 0
+    _device_local_end: int = 0
 
     @classmethod
     def from_payload(cls, payload: str) -> Init:
         raw = _loads_object(payload)
+        mode = int(raw.get("md", 1))
+        if mode != 2:
+            mode = 1
+        kiosk = 1 if int(raw.get("ki", 0)) == 1 else 0
+        device_local_end = 1 if int(raw.get("dl", 0)) == 1 else 0
+        if mode != 2:
+            kiosk = 0
+            device_local_end = 0
         return cls(
             entities=raw.get("e"),
             merchant_status=str(raw.get("m", "")),
             active_order_id=str(raw.get("oid", "")),
             verification_flag=int(raw.get("vf", 0)),
             has_merchant_status="m" in raw,
+            _mode=mode,
+            _kiosk=kiosk,
+            _device_local_end=device_local_end,
         )
 
     @property
@@ -178,15 +197,198 @@ class Init:
     def is_verification_required(self) -> bool:
         return self.verification_flag > 0
 
+    @property
+    def is_service_mode(self) -> bool:
+        return self._mode != 2
+
+    @property
+    def is_vending_mode(self) -> bool:
+        return self._mode == 2
+
+    @property
+    def is_kiosk(self) -> bool:
+        return self._kiosk == 1
+
+    @property
+    def is_device_local_enabled(self) -> bool:
+        return self._kiosk == 1 and self._device_local_end == 1
+
     def to_payload(self) -> str:
         return _dumps_object(
             {
                 "e": self.entities,
                 "m": self.merchant_status,
+                "md": self._mode,
+                "ki": self._kiosk,
                 "oid": self.active_order_id,
                 "vf": self.verification_flag,
             }
         )
+
+
+@dataclass(frozen=True)
+class KioskBootstrap:
+    """Device kiosk bootstrap payload from HTTP API."""
+
+    is_kiosk: bool = False
+    service_type: str = ""
+    kiosk_ready: bool = False
+    framework_ok: bool = False
+    merchant_id: str = ""
+    merchant_name: str = ""
+    company_name: str = ""
+    public_url: str = ""
+    currency: str = "IDR"
+    device_local_enabled: bool = False
+    raw: dict[str, Any] | None = None
+
+    @property
+    def readiness_error(self) -> str | None:
+        """Describe missing kiosk requirements in one readable message."""
+        requirements: list[str] = []
+        if not self.framework_ok:
+            requirements.append("framework must be python")
+        if self.service_type != "vending":
+            requirements.append("service_type must be vending")
+        if not self.is_kiosk:
+            requirements.append("kiosk mode must be enabled")
+        if not self.public_url.strip():
+            requirements.append("public_url is required")
+        if requirements:
+            return f"KIOSK_NOT_READY: {'; '.join(requirements)}"
+        return None
+
+    @classmethod
+    def from_response(cls, response: dict[str, Any]) -> KioskBootstrap:
+        data = response.get("data") if isinstance(response.get("data"), dict) else response
+        if not isinstance(data, dict):
+            data = {}
+        return cls(
+            is_kiosk=bool(data.get("is_kiosk")),
+            service_type=str(data.get("service_type", "")),
+            kiosk_ready=bool(data.get("kiosk_ready")),
+            framework_ok=bool(data.get("framework_ok")),
+            merchant_id=str(data.get("merchant_id", "")),
+            merchant_name=str(data.get("merchant_name", "")),
+            company_name=str(data.get("company_name", "")),
+            public_url=str(data.get("public_url", "")),
+            currency=str(data.get("currency", "IDR") or "IDR"),
+            device_local_enabled=bool(data.get("device_local_enabled")),
+            raw=data,
+        )
+
+
+@dataclass(frozen=True)
+class KioskMenu:
+    """Kiosk menu catalog response."""
+
+    items: list[dict[str, Any]] = field(default_factory=list)
+    raw: dict[str, Any] | None = None
+
+    @classmethod
+    def from_response(cls, response: dict[str, Any]) -> KioskMenu:
+        if not isinstance(response, dict):
+            return cls(items=[], raw={})
+        data = response.get("data", response)
+        if not isinstance(data, dict):
+            return cls(items=[], raw=response)
+        raw_items = data.get("menu_items", [])
+        items = (
+            [item for item in raw_items if isinstance(item, dict)]
+            if isinstance(raw_items, list)
+            else []
+        )
+        return cls(items=items, raw=data)
+
+
+@dataclass(frozen=True)
+class KioskOrder:
+    """Kiosk create-order response (flat JSON with QR image)."""
+
+    order_id: str = ""
+    order_code: str = ""
+    guest_token: str = ""
+    status: str = ""
+    payment_status: str = ""
+    payment_method: str = "qris"
+    qr_reference_id: str = ""
+    qr: str = ""
+    amount: str = ""
+    message: str = ""
+    warning: str = ""
+    raw: dict[str, Any] | None = None
+
+    @classmethod
+    def from_response(cls, response: dict[str, Any]) -> KioskOrder:
+        data = response if isinstance(response, dict) else {}
+        return cls(
+            order_id=str(data.get("order_id", "")),
+            order_code=str(data.get("order_code", "")),
+            guest_token=str(data.get("guest_token", "")),
+            status=str(data.get("status", "")),
+            payment_status=str(data.get("payment_status", "")),
+            payment_method=str(data.get("payment_method", "qris") or "qris"),
+            qr_reference_id=str(data.get("qr_reference_id", "")),
+            qr=str(data.get("qr", "")),
+            amount=str(data.get("amount", "")),
+            message=str(data.get("message", "")),
+            warning=str(data.get("warning", "")),
+            raw=data,
+        )
+
+
+@dataclass(frozen=True)
+class KioskOrderStatus:
+    """Kiosk order status poll response."""
+
+    order_id: str = ""
+    order_code: str = ""
+    status: str = ""
+    payment_status: str = ""
+    is_ended: bool = False
+    qr_reference_id: str = ""
+    guest_token: str = ""
+    raw: dict[str, Any] | None = None
+
+    @classmethod
+    def from_response(cls, response: dict[str, Any]) -> KioskOrderStatus:
+        data = response.get("data") if isinstance(response.get("data"), dict) else response
+        if not isinstance(data, dict):
+            data = {}
+        return cls(
+            order_id=str(data.get("order_id", "")),
+            order_code=str(data.get("order_code", "")),
+            status=str(data.get("status", "")),
+            payment_status=str(data.get("payment_status", "")),
+            is_ended=bool(data.get("is_ended")),
+            qr_reference_id=str(data.get("qr_reference_id", "")),
+            guest_token=str(data.get("guest_token", "")),
+            raw=data,
+        )
+
+
+@dataclass(frozen=True)
+class Dispense:
+    """Dispense payload: JSON array of SKU strings."""
+
+    skus: list[str]
+
+    @classmethod
+    def from_payload(cls, payload: str) -> Dispense:
+        try:
+            raw = json.loads(payload)
+        except json.JSONDecodeError as exc:
+            raise PayloadError("payload must be valid JSON") from exc
+        if not isinstance(raw, list):
+            raise PayloadError("payload must be a JSON array")
+        return cls(skus=[str(item) for item in raw])
+
+    @property
+    def is_valid(self) -> bool:
+        return len(self.skus) > 0
+
+    def to_payload(self) -> str:
+        return json.dumps(self.skus, separators=(",", ":"))
 
 
 @dataclass(frozen=True)
@@ -350,11 +552,16 @@ def entity_value(value: Any, *, decimals: int | None = None) -> str:
 
 __all__ = [
     "DeviceStatus",
+    "Dispense",
     "Entity",
     "EntityCommand",
     "EntityValue",
     "Init",
     "JsonObject",
+    "KioskBootstrap",
+    "KioskMenu",
+    "KioskOrder",
+    "KioskOrderStatus",
     "Payment",
     "Usage",
     "Verification",

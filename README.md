@@ -74,19 +74,63 @@ Register handlers with `client.on(Event.X, handler)`:
 | `Event.PAYMENT`          | `Payment`       | Payment updates        |
 | `Event.PAYMENT_PENDING`  | `Payment`       | Payment pending        |
 | `Event.PAYMENT_SUCCESS`  | `Payment`       | Payment succeeded      |
+| `Event.POSTPAID_READY`   | `Payment`       | Postpaid order ready   |
 | `Event.INIT`             | `Init`          | Device init payload    |
+| `Event.DISPENSE`         | `Dispense`      | Vending SKU list to dispense |
 | `Event.MERCHANT_STATUS`  | `str`           | Merchant status string |
 | `Event.VERIFICATION`     | `Verification`  | Verification result    |
 | `Event.PIN`              | `Verification`  | PIN display            |
 | `Event.DEVICE_STATUS`    | `DeviceStatus`  | Device lifecycle       |
 | `Event.ENTITY_COMMAND`   | `EntityCommand` | Any entity command     |
 | `Event.ACTIVE_SESSION`   | `ActiveSession` | Active paid session    |
-| `Event.METADATA_PENDING` | `str`           | Raw JSON from `mop`    |
-| `Event.METADATA_EXPIRED` | `str`           | Raw JSON from `moe`    |
-| `Event.METADATA_SUCCESS` | `str`           | Raw JSON from `mos`    |
+| `Event.METADATA_PENDING` | `str`           | Pending-payment metadata JSON |
+| `Event.METADATA_ACTIVE_SERVICE` | `str`    | Active-service metadata JSON |
+| `Event.METADATA_EXPIRED` | `str`           | Expired-payment metadata JSON |
+| `Event.METADATA_SUCCESS` | `str`           | Successful-payment metadata JSON |
+| `Event.METADATA_POSTPAID_READY` | `str`     | Postpaid-ready metadata JSON |
 | `Event.ERROR`            | `Exception`     | Runtime error          |
 
 Metadata events pass the decrypted payload as a **JSON string** — parse it in your handler.
+
+`Event.POSTPAID_READY` uses the same `Payment` fields as pending and successful
+payments: item title, price, order ID, and quantity (always `1` for postpaid).
+When the catalog item has postpaid-ready metadata, it is delivered separately
+through `Event.METADATA_POSTPAID_READY`.
+
+Every `Payment` also exposes mutually exclusive payment-type booleans:
+`is_post_paid` / `is_pre_paid`. These flags are separate from
+`is_pending` and `is_success`.
+
+### Init business mode
+
+Use `is_service_mode` / `is_vending_mode` to detect business mode:
+
+```python
+@client.on(Event.INIT)
+def on_init(init: Init) -> None:
+    if init.is_vending_mode:
+        print("vending mode")
+```
+
+### Vending dispense
+
+When business mode is vending, a paid order delivers catalog SKUs to dispense.
+Handle with `Event.DISPENSE` / `Dispense`:
+
+```python
+from firmngin import Dispense, Event
+
+@client.on(Event.DISPENSE)
+def on_dispense(dispense: Dispense) -> None:
+    if not dispense.is_valid:
+        return
+    for sku in dispense.skus:
+        print("dispense:", sku)
+```
+
+When the service enters `on_active_service`, optional catalog metadata is
+delivered separately through `Event.METADATA_ACTIVE_SERVICE`. Like the other
+metadata events, the payload remains a decrypted raw JSON string.
 
 ```python
 import json
@@ -113,13 +157,34 @@ def on_relay(command: EntityCommand) -> None:
 | `ClientConfig`                 | Runtime settings                 |
 | `KeysConfig`                   | `keys.json` loader               |
 | `Event`                        | Event names for `client.on(...)` |
-| `Entity`, `Payment`, `Init`, … | Typed payloads                   |
+| `Entity`, `Payment`, `Init`, `Dispense`, … | Typed payloads            |
 
 ## Device keys
 
 Download `keys.json` from the Firmngin dashboard. The SDK accepts dashboard fields including `server_fingerprint_bytes` (20-byte Arduino-style fingerprint) and picks the right TLS validation mode automatically.
 
+The generated `service_ca_cert` is the trust anchor for HTTPS device services at
+`ota.firmngin.dev`, including image upload. MQTT continues to use `ca_cert`
+independently.
+
 Never commit real keys. See `keys.json.example`.
+
+For a local development broker, add these fields to `keys.json`:
+
+```json
+{
+  "firmngin_broker_addr": "192.168.100.31",
+  "firmngin_broker_port": 1883,
+  "firmngin_no_tls": true,
+  "firmngin_api_base_url": "http://192.168.100.31:8080/api/v1",
+  "firmngin_ota_base_url": "http://192.168.100.31:8080/api/v1/ota"
+}
+```
+
+The broker fields only change the MQTT connection. `firmngin_no_tls` sends MQTT
+traffic without TLS and must only be used in a trusted development network.
+`firmngin_api_base_url` configures HTTP device-service requests. The OTA URL is
+reserved for OTA support and is not consumed by an OTA executor yet.
 
 ## Image upload
 

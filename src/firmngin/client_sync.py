@@ -12,7 +12,13 @@ from typing import Any, cast
 
 from firmngin.client import AsyncClient, Event
 from firmngin.config import ClientConfig
-from firmngin.payloads import Entity
+from firmngin.payloads import (
+    Entity,
+    KioskBootstrap,
+    KioskMenu,
+    KioskOrder,
+    KioskOrderStatus,
+)
 
 
 class Client:
@@ -130,6 +136,36 @@ class Client:
 
     def upload_image(self, entity: Entity | str | int, image: str) -> str:
         return cast(str, self._run(self._async_client.upload_image(entity, image)))
+
+    def kiosk_bootstrap(self) -> KioskBootstrap:
+        return cast(KioskBootstrap, self._run(self._async_client.kiosk_bootstrap()))
+
+    def kiosk_menu(self) -> KioskMenu:
+        return cast(KioskMenu, self._run(self._async_client.kiosk_menu()))
+
+    def kiosk_create_order(
+        self,
+        *,
+        items: list[dict[str, Any]],
+        customer: dict[str, Any] | None = None,
+        client_order_key: str | None = None,
+    ) -> KioskOrder:
+        return cast(
+            KioskOrder,
+            self._run(
+                self._async_client.kiosk_create_order(
+                    items=items,
+                    customer=customer,
+                    client_order_key=client_order_key,
+                )
+            ),
+        )
+
+    def kiosk_order_status(self, order_id: str) -> KioskOrderStatus:
+        return cast(KioskOrderStatus, self._run(self._async_client.kiosk_order_status(order_id)))
+
+    def kiosk_cancel_order(self, order_id: str) -> dict[str, Any]:
+        return cast(dict[str, Any], self._run(self._async_client.kiosk_cancel_order(order_id)))
 
     def run(self) -> None:
         if self._closed:

@@ -55,6 +55,7 @@ keys.local.json
 *.crt
 
 # Local Pi runtime state
+/ddev/
 .atl/
 .pi/
 .firmngin-example-queue/

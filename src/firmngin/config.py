@@ -17,6 +17,8 @@ _PEM_RE = re.compile(
     re.DOTALL,
 )
 _FINGERPRINT_RE = re.compile(r"^[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){31}$")
+_DEFAULT_API_BASE_URL = "https://ota.firmngin.dev/api/v1"
+_DEFAULT_OTA_BASE_URL = "https://ota.firmngin.dev/api/v1/ota"
 
 
 def _require_non_empty(value: str, field_name: str) -> str:
@@ -100,6 +102,11 @@ class KeysConfig:
     client_cert: str | None = None
     private_key: str | None = None
     fingerprint_sha256: str | None = None
+    firmngin_broker_addr: str | None = None
+    firmngin_broker_port: int | None = None
+    firmngin_no_tls: bool = False
+    firmngin_api_base_url: str | None = None
+    firmngin_ota_base_url: str | None = None
     decryptor_key: bytes = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -130,6 +137,30 @@ class KeysConfig:
             "fingerprint_sha256",
             _validate_fingerprint(self.fingerprint_sha256),
         )
+        if self.firmngin_broker_addr is not None:
+            if not isinstance(self.firmngin_broker_addr, str):
+                raise ValueError("firmngin_broker_addr must be a string")
+            object.__setattr__(
+                self,
+                "firmngin_broker_addr",
+                _require_non_empty(self.firmngin_broker_addr, "firmngin_broker_addr"),
+            )
+        if self.firmngin_broker_port is not None:
+            if isinstance(self.firmngin_broker_port, bool) or not isinstance(
+                self.firmngin_broker_port, int
+            ):
+                raise ValueError("firmngin_broker_port must be an integer")
+            if not 1 <= self.firmngin_broker_port <= 65535:
+                raise ValueError("firmngin_broker_port must be between 1 and 65535")
+        if not isinstance(self.firmngin_no_tls, bool):
+            raise ValueError("firmngin_no_tls must be a boolean")
+        for field_name in ("firmngin_api_base_url", "firmngin_ota_base_url"):
+            value = getattr(self, field_name)
+            if value is None:
+                continue
+            if not isinstance(value, str):
+                raise ValueError(f"{field_name} must be a string")
+            object.__setattr__(self, field_name, _require_non_empty(value, field_name))
         if self.validation_mode in {"ca", "both"} and self.ca_cert is None:
             raise ValueError("ca_cert is required when validation_mode is ca or both")
         if self.validation_mode in {"pin", "both"} and self.fingerprint_sha256 is None:
@@ -187,6 +218,11 @@ class KeysConfig:
             "client_cert",
             "private_key",
             "fingerprint_sha256",
+            "firmngin_broker_addr",
+            "firmngin_broker_port",
+            "firmngin_no_tls",
+            "firmngin_api_base_url",
+            "firmngin_ota_base_url",
         }
         unknown = set(payload) - allowed
         if unknown:
@@ -217,6 +253,11 @@ class KeysConfig:
             client_cert=None if payload.get("client_cert") is None else str(payload["client_cert"]),
             private_key=None if payload.get("private_key") is None else str(payload["private_key"]),
             fingerprint_sha256=fingerprint_sha256,
+            firmngin_broker_addr=payload.get("firmngin_broker_addr"),
+            firmngin_broker_port=payload.get("firmngin_broker_port"),
+            firmngin_no_tls=payload.get("firmngin_no_tls", False),
+            firmngin_api_base_url=payload.get("firmngin_api_base_url"),
+            firmngin_ota_base_url=payload.get("firmngin_ota_base_url"),
         )
 
     @property
@@ -235,7 +276,8 @@ class ClientConfig:
     """Runtime settings for :class:`~firmngin.AsyncClient`."""
 
     keys: KeysConfig
-    api_base_url: str = "https://api.firmngin.dev/api/v1"
+    api_base_url: str = _DEFAULT_API_BASE_URL
+    ota_base_url: str = _DEFAULT_OTA_BASE_URL
     queue_path: str | None = None
     queue_max_size: int | None = 500
     queue_max_bytes: int | None = 5_242_880
@@ -253,7 +295,18 @@ class ClientConfig:
     MQTT_PORT: ClassVar[int] = 58884
 
     def __post_init__(self) -> None:
+        if (
+            self.keys.firmngin_api_base_url is not None
+            and self.api_base_url == _DEFAULT_API_BASE_URL
+        ):
+            self.api_base_url = self.keys.firmngin_api_base_url
+        if (
+            self.keys.firmngin_ota_base_url is not None
+            and self.ota_base_url == _DEFAULT_OTA_BASE_URL
+        ):
+            self.ota_base_url = self.keys.firmngin_ota_base_url
         self.api_base_url = _require_non_empty(self.api_base_url, "api_base_url")
+        self.ota_base_url = _require_non_empty(self.ota_base_url, "ota_base_url")
         if self.queue_path is not None:
             self.queue_path = _require_non_empty(self.queue_path, "queue_path")
         for name, value in (
@@ -286,11 +339,15 @@ class ClientConfig:
 
     @property
     def mqtt_server(self) -> str:
-        return self.MQTT_SERVER
+        return self.keys.firmngin_broker_addr or self.MQTT_SERVER
 
     @property
     def mqtt_port(self) -> int:
-        return self.MQTT_PORT
+        return self.keys.firmngin_broker_port or self.MQTT_PORT
+
+    @property
+    def mqtt_no_tls(self) -> bool:
+        return self.keys.firmngin_no_tls
 
 
 __all__ = ["ClientConfig", "KeysConfig", "ValidationMode"]

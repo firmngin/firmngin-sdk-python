@@ -78,7 +78,9 @@ class MqttTransport:
         tls_params = self._tls_params()
         if tls_params is not None:
             kwargs["tls_params"] = tls_params
-        if self._config.insecure or self._config.keys.validation_mode == "pin":
+        if not self._config.mqtt_no_tls and (
+            self._config.insecure or self._config.keys.validation_mode == "pin"
+        ):
             kwargs["tls_insecure"] = True
 
         try:
@@ -123,6 +125,8 @@ class MqttTransport:
         return self._client
 
     def _tls_params(self) -> Any | None:
+        if self._config.mqtt_no_tls:
+            return None
         cert_file = self._pem_files.write(self._config.keys.client_cert)
         key_file = self._pem_files.write(self._config.keys.private_key)
         if self._config.insecure:

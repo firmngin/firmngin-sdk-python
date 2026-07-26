@@ -11,6 +11,7 @@ Runnable samples for the Firmngin Python SDK. Each script expects `keys.json` in
 | `entity_command.py` | Per-entity command handlers |
 | `batch_and_location.py` | Batch updates + GPS |
 | `async_with_image_upload.py` | Image upload (`firmngin[http]`) |
+| `kiosk_checkout.py` | Vending kiosk HTTP checkout + QR image (`firmngin[http]`) |
 | `merchant_status_events.py` | Merchant lifecycle |
 | `device_status_events.py` | Device status |
 | `pin_verification_events.py` | PIN / verification |

@@ -462,7 +462,7 @@ class AsyncClient:
         if self._merchant_status != "on_active_service":
             return False
         now = time.monotonic()
-        if self._session_end_requested or now - self._last_session_end_at < 3:
+        if now - self._last_session_end_at < 3:
             return False
         self._last_session_end_at = now
         # _current_order_id may be empty if /pm or /init was not received
@@ -478,7 +478,6 @@ class AsyncClient:
                 "t": _timestamp_millis(),
             },
         )
-        self._session_end_requested = True
         return True
 
     def push_batch_entities(self) -> BatchState:
@@ -637,6 +636,7 @@ class AsyncClient:
             elif state == "pp":
                 payment = Payment.from_payload(payload, is_pending=True)
                 if payment.is_valid:
+                    self._session_end_requested = False
                     await self._dispatch_many(self._payment_callbacks, payment)
                     await self._dispatch_many(self._payment_pending_callbacks, payment)
             elif state == "pr":

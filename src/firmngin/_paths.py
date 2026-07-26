@@ -21,7 +21,11 @@ from __future__ import annotations
 PAYMENT = "pm"
 DEVICE_STATUS = "ds"
 PENDING_PAYMENT = "pp"
+POSTPAID_READY = "pr"
+DISPENSE = "dp"
 METADATA_ON_PENDING = "mop"
+METADATA_ON_ACTIVE_SERVICE = "moa"
+METADATA_POSTPAID_READY = "mpp"
 METADATA_ON_EXPIRED = "moe"
 METADATA_ON_SUCCESS = "mos"
 MERCHANT_STATUS = "mi"
@@ -68,8 +72,23 @@ def get_path_pending_payment(device_id: str) -> str:
     return _device_topic(_CONTROL_PREFIX, device_id, PENDING_PAYMENT)
 
 
+def get_path_postpaid_ready(device_id: str) -> str:
+    """Inbound postpaid order-ready topic."""
+    return _device_topic(_CONTROL_PREFIX, device_id, POSTPAID_READY)
+
+
+def get_path_dispense(device_id: str) -> str:
+    """Inbound vending dispense topic."""
+    return _device_topic(_CONTROL_PREFIX, device_id, DISPENSE)
+
+
 def get_path_metadata_on_pending(device_id: str) -> str:
     return _device_topic(_CONTROL_PREFIX, device_id, METADATA_ON_PENDING)
+
+
+def get_path_metadata_on_active_service(device_id: str) -> str:
+    """Optional metadata emitted when a service becomes active."""
+    return _device_topic(_CONTROL_PREFIX, device_id, METADATA_ON_ACTIVE_SERVICE)
 
 
 def get_path_metadata_on_expired(device_id: str) -> str:
@@ -78,6 +97,11 @@ def get_path_metadata_on_expired(device_id: str) -> str:
 
 def get_path_metadata_on_success(device_id: str) -> str:
     return _device_topic(_CONTROL_PREFIX, device_id, METADATA_ON_SUCCESS)
+
+
+def get_path_metadata_postpaid_ready(device_id: str) -> str:
+    """Optional metadata paired with the postpaid-ready event."""
+    return _device_topic(_CONTROL_PREFIX, device_id, METADATA_POSTPAID_READY)
 
 
 def get_path_merchant_status(device_id: str) -> str:
@@ -174,19 +198,23 @@ def device_id_from_topic(topic: str) -> str | None:
 
 __all__ = [
     "DEVICE_STATUS",
+    "DISPENSE",
     "DISPLAY_PIN",
     "ENTITY_COMMAND",
     "INIT",
     "LIMIT_EXCEEDED",
     "LWT",
     "MERCHANT_STATUS",
+    "METADATA_ON_ACTIVE_SERVICE",
     "METADATA_ON_EXPIRED",
     "METADATA_ON_PENDING",
+    "METADATA_POSTPAID_READY",
     "METADATA_ON_SUCCESS",
     "NEAR_LIMIT",
     "OTA_TRIGGER",
     "PAYMENT",
     "PENDING_PAYMENT",
+    "POSTPAID_READY",
     "PING",
     "PONG",
     "REQUEST_INIT",
@@ -197,19 +225,23 @@ __all__ = [
     "VERIFICATION_RESULT",
     "device_id_from_topic",
     "get_path_device_status",
+    "get_path_dispense",
     "get_path_display_pin",
     "get_path_entity_command",
     "get_path_init",
     "get_path_limit_exceeded",
     "get_path_lwt",
     "get_path_merchant_status",
+    "get_path_metadata_on_active_service",
     "get_path_metadata_on_expired",
     "get_path_metadata_on_pending",
     "get_path_metadata_on_success",
+    "get_path_metadata_postpaid_ready",
     "get_path_near_limit",
     "get_path_ota_trigger",
     "get_path_payment",
     "get_path_pending_payment",
+    "get_path_postpaid_ready",
     "get_path_ping",
     "get_path_pong",
     "get_path_request_init",

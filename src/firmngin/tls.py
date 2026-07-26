@@ -45,7 +45,12 @@ def _fingerprint_for_host(
 async def verify_mqtt_fingerprint(config: ClientConfig) -> None:
     """Validate the broker certificate fingerprint before connecting."""
     expected = config.keys.fingerprint_sha256
-    if config.insecure or config.keys.validation_mode == "ca" or expected is None:
+    if (
+        config.mqtt_no_tls
+        or config.insecure
+        or config.keys.validation_mode == "ca"
+        or expected is None
+    ):
         return
 
     observed = await asyncio.to_thread(
