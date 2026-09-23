@@ -50,8 +50,7 @@ async def main() -> None:
         listener = asyncio.create_task(client.run())
 
         bootstrap = await client.kiosk_bootstrap()
-        if bootstrap.readiness_error:
-            print(bootstrap.readiness_error)
+        if not bootstrap.is_kiosk:
             print("listening for events; press Ctrl+C to stop")
             await listener
             return

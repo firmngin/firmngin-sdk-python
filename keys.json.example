@@ -7,5 +7,10 @@
   "service_ca_cert": "-----BEGIN CERTIFICATE-----\nMIIBkTCB+wIBADANBgkqhkiG9w0BAQUFADAUMRIwEAYDVQQDEwlMb2NhbGhvc3Q=\n-----END CERTIFICATE-----\n",
   "client_cert": "-----BEGIN CERTIFICATE-----\nMIIBkTCB+wIBADANBgkqhkiG9w0BAQUFADAUMRIwEAYDVQQDEwlEZXZpY2VDZXJ0\n-----END CERTIFICATE-----\n",
   "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDREPLACE\n-----END PRIVATE KEY-----\n",
-  "fingerprint_sha256": "AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99"
+  "fingerprint_sha256": "AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99",
+  "firmngin_broker_addr": "asia-jkt1.firmngin.dev",
+  "firmngin_broker_port": 58884,
+  "firmngin_no_tls": false,
+  "firmngin_api_base_url": "https://ota.firmngin.dev/api/v1",
+  "firmngin_ota_base_url": "https://ota.firmngin.dev/api/v1/ota"
 }

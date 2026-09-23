@@ -35,6 +35,8 @@ def _validate_pem_shape(value: str, field_name: str) -> str:
 
 
 def _validate_decryptor(value: str) -> str:
+    if not value.strip():
+        return ""
     try:
         key = bytes.fromhex(value)
     except ValueError as exc:
@@ -229,7 +231,7 @@ class KeysConfig:
             unknown_name = next(iter(sorted(unknown)))
             raise ValueError(f"unexpected keys field: {unknown_name}")
 
-        required = ("device_id", "device_key", "decryptor", "service_ca_cert")
+        required = ("device_id", "device_key", "service_ca_cert")
         for name in required:
             if name not in payload:
                 raise ValueError(f"{name} is required")
@@ -246,7 +248,7 @@ class KeysConfig:
         return cls(
             device_id=str(payload["device_id"]),
             device_key=str(payload["device_key"]),
-            decryptor=str(payload["decryptor"]),
+            decryptor=str(payload.get("decryptor") or ""),
             service_ca_cert=str(payload["service_ca_cert"]),
             validation_mode=validation_mode,  # type: ignore[arg-type]
             ca_cert=None if payload.get("ca_cert") is None else str(payload["ca_cert"]),

@@ -242,22 +242,6 @@ class KioskBootstrap:
     device_local_enabled: bool = False
     raw: dict[str, Any] | None = None
 
-    @property
-    def readiness_error(self) -> str | None:
-        """Describe missing kiosk requirements in one readable message."""
-        requirements: list[str] = []
-        if not self.framework_ok:
-            requirements.append("framework must be python")
-        if self.service_type != "vending":
-            requirements.append("service_type must be vending")
-        if not self.is_kiosk:
-            requirements.append("kiosk mode must be enabled")
-        if not self.public_url.strip():
-            requirements.append("public_url is required")
-        if requirements:
-            return f"KIOSK_NOT_READY: {'; '.join(requirements)}"
-        return None
-
     @classmethod
     def from_response(cls, response: dict[str, Any]) -> KioskBootstrap:
         data = response.get("data") if isinstance(response.get("data"), dict) else response

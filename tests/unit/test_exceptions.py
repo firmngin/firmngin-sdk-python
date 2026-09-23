@@ -18,6 +18,7 @@ from firmngin.exceptions import (
     QueueError,
     ReconnectError,
     TLSError,
+    format_error,
 )
 
 
@@ -67,3 +68,22 @@ def test_exception_message_is_preserved() -> None:
 def test_exception_can_be_raised_and_caught_as_base() -> None:
     with pytest.raises(FirmnginError):
         raise QueueError("queue write failed")
+
+
+def test_format_error_returns_backend_detail_without_http_wrapper() -> None:
+    error = ConnectionError(
+        "device http GET /device/kiosk/bootstrap failed: "
+        "KIOSK_NOT_CONFIGURED: Device is not bound to a merchant"
+    )
+
+    assert format_error(error) == "KIOSK_NOT_CONFIGURED: Device is not bound to a merchant"
+
+
+def test_format_error_appends_wrapped_transport_cause() -> None:
+    try:
+        try:
+            raise PermissionError(1, "Operation not permitted")
+        except OSError as cause:
+            raise ConnectionError("MQTT connection failed") from cause
+    except ConnectionError as error:
+        assert format_error(error) == "connection failed [1]"

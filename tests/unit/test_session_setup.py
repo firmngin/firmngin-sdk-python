@@ -10,6 +10,7 @@ from firmngin import AsyncClient, ClientConfig, Event, KeysConfig, Usage
 from firmngin._paths import (
     get_path_limit_exceeded,
     get_path_lwt,
+    get_path_metadata_on_active_service,
     get_path_metadata_on_pending,
     get_path_near_limit,
     get_path_request_init,
@@ -60,6 +61,7 @@ async def test_connect_publishes_lwt_online_and_requests_init(
     assert get_path_limit_exceeded(client.config.keys.device_id) in subscribed
     assert get_path_near_limit(client.config.keys.device_id) in subscribed
     assert get_path_metadata_on_pending(client.config.keys.device_id) in subscribed
+    assert get_path_metadata_on_active_service(client.config.keys.device_id) in subscribed
 
 
 @pytest.mark.asyncio

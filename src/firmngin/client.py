@@ -143,7 +143,9 @@ class AsyncClient:
         self.config = config
         self._mqtt = MqttTransport(config)
         self._http = DeviceHttpClient(config)
-        self._crypto = AesGcmSession(config.keys.decryptor_key)
+        self._crypto = (
+            AesGcmSession(config.keys.decryptor_key) if config.keys.decryptor_key else None
+        )
         self._offline_queue = (
             OfflineQueue(
                 config.queue_path,
@@ -418,10 +420,15 @@ class AsyncClient:
     async def upload_image(
         self,
         entity: Entity | str | int,
-        image: str | Path,
+        image: str | Path | bytes | bytearray | memoryview,
+        *,
+        content_type: str | None = None,
+        filename: str | None = None,
     ) -> str:
         """Upload an image for an entity."""
-        return await self._http.upload_image(entity, image)
+        return await self._http.upload_image(
+            entity, image, content_type=content_type, filename=filename
+        )
 
     async def kiosk_bootstrap(self) -> KioskBootstrap:
         return await self._http.kiosk_bootstrap()
@@ -595,17 +602,17 @@ class AsyncClient:
 
     async def _publish_json(self, topic: str, payload: Any, *, retained: bool = False) -> None:
         encoded = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-        encrypted = self._crypto.encrypt(encoded)
+        body = encoded if self._crypto is None else self._crypto.encrypt(encoded)
         if not self._mqtt.is_connected:
             if self._offline_queue is not None:
-                await self._offline_queue.enqueue(topic, encrypted, retained)
+                await self._offline_queue.enqueue(topic, body, retained)
                 return
             raise ConnectionError("MQTT transport is not connected")
         try:
-            await self._mqtt.publish(topic, encrypted, qos=1, retain=retained)
+            await self._mqtt.publish(topic, body, qos=1, retain=retained)
         except Exception as exc:
             if self._offline_queue is not None:
-                await self._offline_queue.enqueue(topic, encrypted, retained)
+                await self._offline_queue.enqueue(topic, body, retained)
                 return
             raise ConnectionError("MQTT publish failed") from exc
 
@@ -617,9 +624,10 @@ class AsyncClient:
         state = topic.rsplit("/", 1)[-1]
 
         try:
-            payload = self._crypto.decrypt(message.payload).decode("utf-8")
+            raw = message.payload if self._crypto is None else self._crypto.decrypt(message.payload)
+            payload = raw.decode("utf-8")
         except Exception as exc:
-            print("[firmngin] failed to decrypt message")
+            print("[firmngin] failed to decode message")
             await self._handle_runtime_error(exc)
             return
 

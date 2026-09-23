@@ -7,10 +7,12 @@ import pytest
 from firmngin.exceptions import PayloadError
 from firmngin.payloads import (
     DeviceStatus,
+    Dispense,
     Entity,
     EntityCommand,
     EntityValue,
     Init,
+    KioskMenu,
     Payment,
     Verification,
 )
@@ -28,6 +30,8 @@ def test_payment_parses_arduino_short_keys() -> None:
     assert payment.order_id == "ord-1"
     assert payment.quantity == 1
     assert payment.is_pending
+    assert payment.is_pre_paid
+    assert not payment.is_post_paid
 
 
 def test_verification_parses_pin_payload() -> None:
@@ -58,6 +62,66 @@ def test_init_status_helpers_match_arduino() -> None:
     assert init.is_pin_enabled
     assert init.is_precondition_enabled
     assert init.is_verification_required
+    assert init.is_service_mode
+    assert not init.is_vending_mode
+
+
+def test_init_mode_helpers() -> None:
+    service = Init.from_payload('{"m":"idle","md":1}')
+    vending = Init.from_payload('{"m":"idle","md":2}')
+
+    assert service.is_service_mode
+    assert not service.is_vending_mode
+    assert vending.is_vending_mode
+    assert not vending.is_service_mode
+    assert '"md":2' in vending.to_payload()
+    assert not service.is_kiosk
+    assert not vending.is_kiosk
+
+
+def test_init_kiosk_helpers() -> None:
+    kiosk = Init.from_payload('{"m":"idle","md":2,"ki":1}')
+    ignored = Init.from_payload('{"m":"idle","md":1,"ki":1}')
+
+    assert kiosk.is_vending_mode
+    assert kiosk.is_kiosk
+    assert '"ki":1' in kiosk.to_payload()
+    assert not ignored.is_kiosk
+    assert '"ki":0' in ignored.to_payload()
+
+
+def test_kiosk_menu_extracts_only_menu_items() -> None:
+    response = {
+        "menu_items": [
+            {"id": "item-1", "title": "Water", "is_active": True},
+            {"id": "item-2", "title": "Coffee", "is_active": False},
+        ],
+        "workspace": {"name": "Development"},
+        "device": {"availability": "online"},
+    }
+
+    menu = KioskMenu.from_response(response)
+
+    assert [item["id"] for item in menu.items] == ["item-1", "item-2"]
+    assert menu.raw == response
+
+
+def test_dispense_parses_sku_array() -> None:
+    dispense = Dispense.from_payload('["sku-a","sku-b"]')
+
+    assert dispense.is_valid
+    assert dispense.skus == ["sku-a", "sku-b"]
+    assert dispense.to_payload() == '["sku-a","sku-b"]'
+
+
+def test_dispense_empty_array_is_invalid() -> None:
+    assert not Dispense.from_payload("[]").is_valid
+
+
+@pytest.mark.parametrize("payload", ["not json", "{}", '"sku"'])
+def test_dispense_rejects_non_array_payload(payload: str) -> None:
+    with pytest.raises(PayloadError):
+        Dispense.from_payload(payload)
 
 
 def test_device_status_helpers_match_arduino() -> None:

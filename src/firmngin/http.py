@@ -160,23 +160,42 @@ class DeviceHttpClient:
             suffix = f": {detail}" if detail else ""
             raise ConnectionError(f"device http {method.upper()} {path} failed{suffix}") from exc
 
-    async def upload_image(self, entity: Entity | str | int, image: str | Path) -> str:
+    async def upload_image(
+        self,
+        entity: Entity | str | int,
+        image: str | Path | bytes | bytearray | memoryview,
+        *,
+        content_type: str | None = None,
+        filename: str | None = None,
+    ) -> str:
         httpx = _require_httpx()
         key = entity_key(entity)
-        image_path = Path(image)
-        if not image_path.name:
-            raise ValueError("image path must point to a file")
-        if not image_path.is_file():
-            raise FileNotFoundError(str(image_path))
 
-        content_type = mimetypes.guess_type(image_path.name)[0] or "application/octet-stream"
-        data = await asyncio.to_thread(image_path.read_bytes)
+        if isinstance(image, (bytes, bytearray, memoryview)):
+            data = bytes(image)
+            if not data:
+                raise ValueError("image data must not be empty")
+            resolved_content_type = content_type or "application/octet-stream"
+            image_name = filename or "capture.jpg"
+        else:
+            image_path = Path(image)
+            if not image_path.name:
+                raise ValueError("image path must point to a file")
+            if not image_path.is_file():
+                raise FileNotFoundError(str(image_path))
+            data = await asyncio.to_thread(image_path.read_bytes)
+            resolved_content_type = (
+                content_type
+                or mimetypes.guess_type(image_path.name)[0]
+                or "application/octet-stream"
+            )
+            image_name = filename or image_path.name
 
         path = "/device-camera/upload"
         headers = self._signed_headers("POST", path)
         cert = await self._mtls_cert()
 
-        files = {"image": (image_path.name, data, content_type)}
+        files = {"image": (image_name, data, resolved_content_type)}
         form = {"entity_key": key}
         url = f"{self._config.api_base_url.rstrip('/')}{path}"
 

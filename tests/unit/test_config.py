@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -45,12 +46,23 @@ def test_keys_config_from_file_requires_json_object(tmp_path: Path) -> None:
         KeysConfig.from_file(path)
 
 
-def test_keys_config_rejects_missing_decryptor() -> None:
+def test_keys_config_allows_missing_decryptor_for_plaintext_mode() -> None:
     data = _valid_keys_data()
     data.pop("decryptor")
 
-    with pytest.raises(ValueError, match="decryptor"):
-        KeysConfig.from_dict(data)
+    keys = KeysConfig.from_dict(data)
+
+    assert keys.decryptor == ""
+    assert keys.decryptor_key == b""
+
+
+def test_keys_config_accepts_empty_decryptor_for_plaintext_mode() -> None:
+    data = _valid_keys_data()
+    data["decryptor"] = ""
+
+    keys = KeysConfig.from_dict(data)
+
+    assert keys.decryptor_key == b""
 
 
 @pytest.mark.parametrize(
@@ -162,6 +174,76 @@ def test_client_config_uses_fixed_mqtt_broker() -> None:
 
     assert config.mqtt_server == "asia-jkt1.firmngin.dev"
     assert config.mqtt_port == 58884
+    assert config.mqtt_no_tls is False
+
+
+def test_client_config_uses_custom_broker_fields(tmp_path: Path) -> None:
+    data: dict[str, Any] = _valid_keys_data()
+    data.update(
+        {
+            "firmngin_broker_addr": "192.168.100.31",
+            "firmngin_broker_port": 1883,
+            "firmngin_no_tls": True,
+            "firmngin_api_base_url": "http://192.168.100.31:8080/api/v1",
+            "firmngin_ota_base_url": "http://192.168.100.31:8080/api/v1/ota",
+        }
+    )
+
+    path = tmp_path / "keys.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+    config = ClientConfig.from_file(path)
+
+    assert config.mqtt_server == "192.168.100.31"
+    assert config.mqtt_port == 1883
+    assert config.mqtt_no_tls is True
+    assert config.api_base_url == "http://192.168.100.31:8080/api/v1"
+    assert config.ota_base_url == "http://192.168.100.31:8080/api/v1/ota"
+
+
+@pytest.mark.parametrize(
+    ("field_name", "value", "message"),
+    [
+        ("firmngin_broker_addr", "", "firmngin_broker_addr"),
+        ("firmngin_broker_port", True, "firmngin_broker_port"),
+        ("firmngin_broker_port", 65536, "firmngin_broker_port"),
+        ("firmngin_no_tls", "true", "firmngin_no_tls"),
+        ("firmngin_api_base_url", "", "firmngin_api_base_url"),
+        ("firmngin_ota_base_url", 123, "firmngin_ota_base_url"),
+    ],
+)
+def test_keys_config_rejects_invalid_broker_fields(
+    field_name: str, value: object, message: str
+) -> None:
+    data: dict[str, Any] = _valid_keys_data()
+    data[field_name] = value
+
+    with pytest.raises(ValueError, match=message):
+        KeysConfig.from_dict(data)
+
+
+def test_client_config_uses_service_api_endpoint() -> None:
+    keys = KeysConfig.from_dict(_valid_keys_data())
+
+    config = ClientConfig(keys=keys)
+
+    assert config.api_base_url == "https://ota.firmngin.dev/api/v1"
+    assert config.ota_base_url == "https://ota.firmngin.dev/api/v1/ota"
+
+
+def test_explicit_client_endpoint_options_override_keys_json() -> None:
+    data: dict[str, Any] = _valid_keys_data()
+    data["firmngin_api_base_url"] = "http://keys.local/api/v1"
+    data["firmngin_ota_base_url"] = "http://keys.local/api/v1/ota"
+
+    config = ClientConfig(
+        keys=KeysConfig.from_dict(data),
+        api_base_url="https://explicit.example/api/v1",
+        ota_base_url="https://explicit.example/api/v1/ota",
+    )
+
+    assert config.api_base_url == "https://explicit.example/api/v1"
+    assert config.ota_base_url == "https://explicit.example/api/v1/ota"
 
 
 @pytest.mark.parametrize("field_name", ["mqtt_server", "mqtt_port"])

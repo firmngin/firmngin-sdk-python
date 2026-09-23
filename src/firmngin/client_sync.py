@@ -8,6 +8,7 @@ import signal
 import threading
 from concurrent import futures
 from collections.abc import Coroutine
+from pathlib import Path
 from typing import Any, cast
 
 from firmngin.client import AsyncClient, Event
@@ -134,8 +135,22 @@ class Client:
     def request_init(self) -> None:
         self._run(self._async_client.request_init())
 
-    def upload_image(self, entity: Entity | str | int, image: str) -> str:
-        return cast(str, self._run(self._async_client.upload_image(entity, image)))
+    def upload_image(
+        self,
+        entity: Entity | str | int,
+        image: str | Path | bytes | bytearray | memoryview,
+        *,
+        content_type: str | None = None,
+        filename: str | None = None,
+    ) -> str:
+        return cast(
+            str,
+            self._run(
+                self._async_client.upload_image(
+                    entity, image, content_type=content_type, filename=filename
+                )
+            ),
+        )
 
     def kiosk_bootstrap(self) -> KioskBootstrap:
         return cast(KioskBootstrap, self._run(self._async_client.kiosk_bootstrap()))
