@@ -41,8 +41,8 @@ PING = "pi"
 PONG = "po"
 LWT = "lwt"
 USAGE_RESPONSE = "ur"
-LIMIT_EXCEEDED = "le"
-NEAR_LIMIT = "nl"
+LIMIT_EXCEEDED = "le"  # Deprecated: retained for compatibility; no longer subscribed.
+NEAR_LIMIT = "nl"  # Deprecated: retained for compatibility; no longer subscribed.
 OTA_TRIGGER = "ot/trg"
 
 _CONTROL_PREFIX = "/c"
@@ -125,10 +125,12 @@ def get_path_usage_response(device_id: str) -> str:
 
 
 def get_path_limit_exceeded(device_id: str) -> str:
+    """Deprecated limit-exceeded topic; the client no longer subscribes to it."""
     return _device_topic(_CONTROL_PREFIX, device_id, LIMIT_EXCEEDED)
 
 
 def get_path_near_limit(device_id: str) -> str:
+    """Deprecated near-limit topic; the client no longer subscribes to it."""
     return _device_topic(_CONTROL_PREFIX, device_id, NEAR_LIMIT)
 
 

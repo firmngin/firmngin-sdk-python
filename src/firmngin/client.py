@@ -19,7 +19,6 @@ from firmngin._paths import (
     get_path_display_pin,
     get_path_entity_command,
     get_path_init,
-    get_path_limit_exceeded,
     get_path_lwt,
     get_path_merchant_status,
     get_path_metadata_on_active_service,
@@ -27,7 +26,6 @@ from firmngin._paths import (
     get_path_metadata_on_pending,
     get_path_metadata_on_success,
     get_path_metadata_postpaid_ready,
-    get_path_near_limit,
     get_path_payment,
     get_path_pending_payment,
     get_path_postpaid_ready,
@@ -583,8 +581,6 @@ class AsyncClient:
             get_path_display_pin(device_id),
             get_path_verification_result(device_id),
             get_path_usage_response(device_id),
-            get_path_limit_exceeded(device_id),
-            get_path_near_limit(device_id),
             get_path_metadata_on_pending(device_id),
             get_path_metadata_on_active_service(device_id),
             get_path_metadata_on_expired(device_id),
@@ -622,6 +618,10 @@ class AsyncClient:
     async def _handle_message(self, message: MqttMessage) -> None:  # noqa: PLR0912
         topic = message.topic
         state = topic.rsplit("/", 1)[-1]
+
+        # Deprecated control topics are ignored, including undecodable payloads.
+        if topic.startswith("/c/") and state in {"le", "nl"}:
+            return
 
         try:
             raw = message.payload if self._crypto is None else self._crypto.decrypt(message.payload)
@@ -683,12 +683,8 @@ class AsyncClient:
                 await self._mqtt.publish(
                     get_path_pong(self.config.keys.device_id), payload.encode("utf-8"), qos=0
                 )
-            elif state in {"ur", "le", "nl"}:
-                usage = Usage.from_payload(
-                    payload,
-                    near_limit=state == "nl",
-                    limit_exceeded=state == "le",
-                )
+            elif state == "ur":
+                usage = Usage.from_payload(payload)
                 if usage.is_valid:
                     await self._dispatch_many(self._usage_callbacks, usage)
             elif state == "mop":

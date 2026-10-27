@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from firmngin import AsyncClient, ClientConfig, Event, KeysConfig, Usage
+from firmngin import AsyncClient, ClientConfig, EntityCommand, Event, KeysConfig, Usage
 from firmngin._paths import (
     get_path_limit_exceeded,
     get_path_lwt,
@@ -56,10 +56,12 @@ async def test_connect_publishes_lwt_online_and_requests_init(
 
     lwt_topic = get_path_lwt(client.config.keys.device_id)
     assert (lwt_topic, b"1", True) in published
-    assert any(topic == get_path_request_init(client.config.keys.device_id) for topic, _, _ in published)
+    assert any(
+        topic == get_path_request_init(client.config.keys.device_id) for topic, _, _ in published
+    )
     assert get_path_usage_response(client.config.keys.device_id) in subscribed
-    assert get_path_limit_exceeded(client.config.keys.device_id) in subscribed
-    assert get_path_near_limit(client.config.keys.device_id) in subscribed
+    assert get_path_limit_exceeded(client.config.keys.device_id) not in subscribed
+    assert get_path_near_limit(client.config.keys.device_id) not in subscribed
     assert get_path_metadata_on_pending(client.config.keys.device_id) in subscribed
     assert get_path_metadata_on_active_service(client.config.keys.device_id) in subscribed
 
@@ -101,13 +103,59 @@ async def test_dispatch_usage_event() -> None:
 
     await client._handle_message(
         MqttMessage(
-            topic=get_path_near_limit(client.config.keys.device_id),
+            topic=get_path_usage_response(client.config.keys.device_id),
             payload=encrypted,
         )
     )
 
+    assert len(usages) == 1
     assert usages[0].used == 1
-    assert usages[0].near_limit is True
+    assert usages[0].limit == 10
+    assert usages[0].near_limit is False
+    assert usages[0].limit_exceeded is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("state", ["le", "nl"])
+@pytest.mark.parametrize("valid_payload", [True, False], ids=["encrypted", "malformed"])
+async def test_deprecated_limit_messages_are_ignored(state: str, valid_payload: bool) -> None:
+    client = _client()
+    callback = Mock()
+    for event in Event:
+        client.on(event, callback)
+
+    payload = (
+        aes_gcm_encrypt(client.config.keys.decryptor_key, b'{"u":1,"l":10}')
+        if valid_payload
+        else b"invalid ciphertext"
+    )
+    await client._handle_message(
+        MqttMessage(topic=f"/c/{client.config.keys.device_id}/{state}", payload=payload)
+    )
+
+    callback.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("key", ["le", "nl"])
+async def test_entity_commands_with_legacy_limit_names_are_still_routed(key: str) -> None:
+    client = _client()
+    commands: list[EntityCommand] = []
+
+    @client.on_entity(key)
+    def handle_command(command: EntityCommand) -> None:
+        commands.append(command)
+
+    await client._handle_message(
+        MqttMessage(
+            topic=f"/d/{client.config.keys.device_id}/rs/{key}",
+            payload=aes_gcm_encrypt(client.config.keys.decryptor_key, b"on"),
+        )
+    )
+
+    assert len(commands) == 1
+    assert commands[0].key == key
+    assert commands[0].value == "on"
 
 
 @pytest.mark.asyncio

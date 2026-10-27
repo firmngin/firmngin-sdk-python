@@ -50,9 +50,18 @@ with Client(ClientConfig.from_file("keys.json")) as client:
         print("relay:", command.value)
 
     client.connect()
+    # Initial state: publish once after connect, then only when the value changes.
     client.push_entity(temperature, 27.5)
     client.run()
 ```
+
+Publish current entity state once after init/connect, then publish only when it
+changes, from your sensor or hardware change callback. The backend keeps the
+last entity state, so periodic entity-state heartbeats are unnecessary and
+billable: every publish counts. Do not call `push_entity()` or batch state
+publishes on a fixed short timer. See
+[`examples/entity_publish.py`](examples/entity_publish.py) for skipping unchanged
+readings. MQTT keepalive and SDK ping/pong handling continue automatically.
 
 ## Debug mode
 

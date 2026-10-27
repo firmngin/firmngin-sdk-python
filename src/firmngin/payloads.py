@@ -377,7 +377,11 @@ class Dispense:
 
 @dataclass(frozen=True)
 class Usage:
-    """Usage payload parsed from Arduino keys ``u``, ``l``, ``r``, ``pct``, ``ra``, ``g``."""
+    """Usage payload parsed from Arduino keys ``u``, ``l``, ``r``, ``pct``, ``ra``, ``g``.
+
+    ``near_limit`` and ``limit_exceeded`` are deprecated compatibility fields.
+    Client usage events come only from ``ur`` and leave both fields False.
+    """
 
     used: int = 0
     limit: int = 0

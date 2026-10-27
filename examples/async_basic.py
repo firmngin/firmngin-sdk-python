@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
-from firmngin import AsyncClient, ClientConfig, Entity, Event, Init, EntityCommand
+from firmngin import AsyncClient, ClientConfig, Entity, EntityCommand
 
 relay = Entity(1)
 temperature = Entity("temperature")
@@ -14,6 +14,7 @@ async def main() -> None:
     config = ClientConfig.from_file("keys.json")
 
     async with AsyncClient(config) as client:
+
         @client.on_entity(relay)
         def handle_relay(command: EntityCommand) -> None:
             print("relay command:", command.value)
@@ -21,6 +22,8 @@ async def main() -> None:
         client.set_debug(True)
         await client.connect()
         await client.request_init()
+        # Publish once after connect, then only when the sensor value changes.
+        # The backend keeps the last state; periodic heartbeats are billable.
         await client.push_entity(temperature, 27.5)
         await client.run()
 

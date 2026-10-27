@@ -13,6 +13,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `PLAN.md` — full design and phase plan.
 - `keys.json.example` — config template.
 
+## [0.0.3] — 2026-10-27
+
+### Changed
+
+- Stop subscribing to or routing the deprecated `le` (limit exceeded) and `nl`
+  (near limit) MQTT topics. Usage events now come only from `ur`.
+- Keep the legacy topic helpers/constants and `Usage.near_limit` /
+  `Usage.limit_exceeded` fields for compatibility, marked deprecated. Both flags
+  remain `False` on client usage events.
+- Clarify entity publishing examples and guidance: publish once after
+  init/connect, then only on change. The backend keeps the last entity state;
+  periodic state heartbeats are unnecessary and each publish is billable.
+
 ## [0.0.1] — TBD
 
 ### Added
@@ -28,4 +41,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Phase 10: `mypy --strict`, `ruff`, ≥90% coverage on core, `pip-audit`, `bandit`.
 
 [Unreleased]: https://github.com/firmngin/firmngin-sdk-python/compare/HEAD
+[0.0.3]: https://github.com/firmngin/firmngin-sdk-python/compare/v0.0.2...v0.0.3
 [0.0.1]: https://github.com/firmngin/firmngin-sdk-python/releases/tag/v0.0.1

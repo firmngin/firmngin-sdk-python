@@ -14,8 +14,11 @@ def main() -> None:
         @client.on_entity(relay)
         def handle_relay(command: EntityCommand) -> None:
             print("relay command:", command.value)
+
         client.set_debug(True)
         client.connect()
+        # Publish once after connect, then only when the sensor value changes.
+        # The backend keeps the last state; periodic heartbeats are billable.
         client.push_entity(temperature, 27.5)
         client.run()
 

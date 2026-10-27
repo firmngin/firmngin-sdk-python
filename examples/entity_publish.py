@@ -1,4 +1,4 @@
-"""Publish entity state updates."""
+"""Publish initial entity state, then publish only when a sensor value changes."""
 
 from __future__ import annotations
 
@@ -14,9 +14,21 @@ async def main() -> None:
     config = ClientConfig.from_file("keys.json")
 
     async with AsyncClient(config) as client:
+        last_temperature: float | None = None
+
+        async def publish_temperature(value: float) -> None:
+            nonlocal last_temperature
+            if value == last_temperature:
+                return
+            await client.push_entity(temperature, value)
+            last_temperature = value
+
         await client.connect()
+        # Send initial state once. The backend keeps the last entity state.
         await client.push_entity(relay, "on")
-        await client.push_entity(temperature, 27.5)
+        await publish_temperature(27.5)
+        # Await publish_temperature(new_value) from your sensor's change callback.
+        # Do not add periodic state heartbeats: every publish is billable.
         await client.run()
 
 

@@ -16,6 +16,8 @@ async def main() -> None:
     async with AsyncClient(config) as client:
         await client.connect()
 
+        # Publish initial state once; send later updates only when values change.
+        # The backend keeps the last state; periodic heartbeats are billable.
         batch = client.push_batch_entities()
         batch.add(relay, "on")
         batch.add(temperature, 27.5)
