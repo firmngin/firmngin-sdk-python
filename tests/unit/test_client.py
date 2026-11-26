@@ -583,3 +583,67 @@ async def test_plaintext_mode_publishes_unencrypted_payload(
 
     assert published[0][0] == get_path_request_init(client.config.keys.device_id)
     assert json.loads(published[0][1]) == {"t": 1_783_652_400_123}
+
+
+@pytest.mark.asyncio
+async def test_init_seeds_local_entity_values_by_pin() -> None:
+    client = _plaintext_client()
+
+    await client._handle_message(
+        MqttMessage(
+            topic=get_path_init(client.config.keys.device_id),
+            payload=b'{"m":"idle","e":[{"p":1,"v":"1"},{"p":4,"v":"off"}]}',
+        )
+    )
+
+    assert client.entity(1).to_string() == "1"
+    assert client.entity(4).to_string() == "off"
+    # A pin the server did not announce stays unknown.
+    assert client.entity(9).to_string() == ""
+
+
+@pytest.mark.asyncio
+async def test_report_all_publishes_every_known_value_in_one_batch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _plaintext_client()
+    published: list[tuple[str, bytes]] = []
+    monkeypatch.setattr(client._mqtt, "_connected", True)
+    monkeypatch.setattr("firmngin.client._timestamp_millis", lambda: 1_783_652_400_123)
+
+    async def publish(topic: str, payload: bytes, **_kwargs: object) -> None:
+        published.append((topic, payload))
+
+    monkeypatch.setattr(client._mqtt, "publish", publish)
+
+    await client._handle_message(
+        MqttMessage(
+            topic=get_path_init(client.config.keys.device_id),
+            payload=b'{"m":"idle","e":[{"p":1,"v":"1"},{"p":2,"v":"0"}]}',
+        )
+    )
+    await client.report_all()
+
+    assert published[0][0] == get_path_update_entities(client.config.keys.device_id)
+    assert json.loads(published[0][1]) == {
+        "t": 1_783_652_400_123,
+        "items": [{"k": "1", "v": "1"}, {"k": "2", "v": "0"}],
+    }
+
+
+@pytest.mark.asyncio
+async def test_report_all_is_a_noop_when_nothing_is_known(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _plaintext_client()
+    published: list[tuple[str, bytes]] = []
+    monkeypatch.setattr(client._mqtt, "_connected", True)
+
+    async def publish(topic: str, payload: bytes, **_kwargs: object) -> None:
+        published.append((topic, payload))
+
+    monkeypatch.setattr(client._mqtt, "publish", publish)
+
+    await client.report_all()
+
+    assert published == []

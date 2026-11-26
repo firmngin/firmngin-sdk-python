@@ -55,6 +55,13 @@ async def test_connect_publishes_lwt_online_and_requests_init(
     await client.connect()
 
     lwt_topic = get_path_lwt(client.config.keys.device_id)
+    # Retained LWT is off by default: the backend re-subscribes on every clean
+    # session, and each replay is a delivered message plus a stale status.
+    assert (lwt_topic, b"1", False) in published
+    # A deployment that wants the old behaviour can still ask for it.
+    published.clear()
+    client.config.lwt_retain = True
+    await client.connect()
     assert (lwt_topic, b"1", True) in published
     assert any(topic == get_path_request_init(client.config.keys.device_id) for topic, _, _ in published)
     assert get_path_usage_response(client.config.keys.device_id) in subscribed

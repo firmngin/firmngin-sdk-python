@@ -72,7 +72,7 @@ class MqttTransport:
                 get_path_lwt(self._config.keys.device_id),
                 payload=b"0",
                 qos=1,
-                retain=True,
+                retain=self._config.lwt_retain,
             )
 
         tls_params = self._tls_params()

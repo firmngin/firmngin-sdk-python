@@ -287,6 +287,11 @@ class ClientConfig:
     max_local_entity_values: int = 256
     connect_timeout_seconds: float = 10.0
     keepalive_seconds: int = 60
+    # A retained LWT is replayed to every new subscriber, and the backend
+    # re-subscribes on each clean session: each replay is a delivered message and
+    # a stale status can be read as the current one. The C SDKs publish this topic
+    # with retain=0 for the same reason, so this defaults to off.
+    lwt_retain: bool = False
     reconnect_initial_delay_seconds: float = 1.0
     reconnect_max_delay_seconds: float = 30.0
     reconnect_max_attempts: int | None = None
